@@ -172,18 +172,37 @@ function prepare(img, crop = null) { // face-independent work, done once per pho
   }
   return { b, gw, gh, n, work, rgba, soft:blur(lum, gw, gh, 2), softValue:blur(value, gw, gh, 2), crop:src, b1:blur(lum, gw, gh, 1), b2:blur(lum, gw, gh, 2), b4:blur(lum, gw, gh, 4) };
 }
-function chooseCrop(img, base, face) {
-  // Frame the portrait: the face takes about a third of the drawing's height, hair and shoulders fill the rest.
+function chooseCrop(img, base, face, hands = []) {
+  // Frame the portrait: the face takes about a third of the drawing's height, hair and shoulders fill the rest —
+  // and any visible hand is always kept whole, with a margin, even if that means pulling the framing back.
   if (face.source !== 'ai') return null;
   const natW = img.naturalWidth, natH = img.naturalHeight, s = natW / base.gw, aspect = (W - PAD * 2) / (H - PAD * 2);
   const boxH = face.ry / .62 * s, top = (face.y - face.ry / .62 * .42) * s, cx = face.x * s;
-  const h = Math.min(boxH / .3, natH, natW / aspect), w = h * aspect;
+  let h = Math.min(boxH / .3, natH, natW / aspect), w = h * aspect;
+  let x = clamp(cx - w / 2, 0, natW - w), y = clamp(top - h * .2, 0, natH - h);
+  for (const hand of hands) {
+    const xs = hand.map(p => p.x * s), ys = hand.map(p => p.y * s), m = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * .25;
+    const ux0 = Math.min(x, Math.min(...xs) - m), uy0 = Math.min(y, Math.min(...ys) - m), ux1 = Math.max(x + w, Math.max(...xs) + m), uy1 = Math.max(y + h, Math.max(...ys) + m);
+    if (ux0 >= x && uy0 >= y && ux1 <= x + w && uy1 <= y + h) continue;
+    w = Math.min(natW, Math.max(ux1 - ux0, (uy1 - uy0) * aspect)); h = Math.min(natH, w / aspect); w = h * aspect;
+    x = clamp((ux0 + ux1) / 2 - w / 2, 0, natW - w); y = clamp(Math.min(uy0, top - h * .2), 0, natH - h);
+  }
   if (w > natW * .92 && h > natH * .92) return null;
-  return { x:clamp(cx - w / 2, 0, natW - w), y:clamp(top - h * .2, 0, natH - h), w, h };
+  return { x, y, w, h };
 }
 async function analyzePhoto(img) {
   let base = prepare(img), face = await detectFace(base);
-  const crop = chooseCrop(img, base, face);
+  const early = face.source === 'ai' ? await detectLandmarks(base) : null; // hands on the whole photo, to frame them in
+  if (early?.mesh) {
+    // The face mesh only fits human faces. If the detector's pick doesn't contain the mesh's nose, trust the mesh.
+    const nose = early.mesh[1], inside = Math.hypot((nose.x - face.x) / face.rx, (nose.y - face.y) / face.ry) < 1;
+    if (!inside) {
+      const oval = early.parts.oval.map(c => early.mesh[c.start]), xs = oval.map(p => p.x), ys = oval.map(p => p.y);
+      const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+      face = faceFromBox(Math.min(...xs), Math.min(...ys) + h * .12, w, h * .88, 'ai', [centroid(early.parts.irisL.map(i => early.mesh[i])), centroid(early.parts.irisR.map(i => early.mesh[i]))]);
+    }
+  }
+  const crop = chooseCrop(img, base, face, early?.hands ?? []);
   if (crop) {
     const zoomed = prepare(img, crop), refound = await detectFace(zoomed), s0 = img.naturalWidth / base.gw, k = zoomed.gw / crop.w;
     // If the detector misses on the zoomed crop, carry the original face over into crop coordinates.
@@ -218,8 +237,9 @@ function analyzeFace(base, face) { // everything that depends on where the face 
   }
   for (const hand of marks?.hands ?? []) {
     const palm = Math.hypot(hand[5].x - hand[17].x, hand[5].y - hand[17].y) || 20;
-    paintPolygon(zone, gw, gh, convexHull([0, 1, 2, 5, 9, 13, 17].map(i => hand[i])), Z.HAND, palm * .25);
-    for (const c of marks.bones) paintCapsule(zone, gw, gh, hand[c.start], hand[c.end], palm * .2, Z.HAND);
+    // Generous margins: the zone must reach past the finger edges so the whole outline is measured at fine scale.
+    paintPolygon(zone, gw, gh, convexHull([0, 1, 2, 5, 9, 13, 17].map(i => hand[i])), Z.HAND, palm * .4);
+    for (const c of marks.bones) paintCapsule(zone, gw, gh, hand[c.start], hand[c.end], palm * .36, Z.HAND);
   }
   const handRaw = new Float32Array(n), eyeRaw = new Float32Array(n);
   for (let i = 0; i < n; i++) { handRaw[i] = zone[i] & Z.HAND ? 1 : 0; eyeRaw[i] = zone[i] & (Z.EYE | Z.IRIS) ? 1 : 0; }
@@ -258,9 +278,10 @@ function analyzeFace(base, face) { // everything that depends on where the face 
     if (i % 5 === 0) { if (faceW[i] > .5) faceSample.push(faceDog[i]); else if (handW[i] > .5) handSample.push(faceDog[i]); }
   }
   const highEnd = list => { list.sort((a, z) => a - z); return list.length ? list[Math.floor(list.length * .985)] : 0; };
-  const nf = Math.max(4, highEnd(faceSample)), nh = Math.max(4, highEnd(handSample) * .7), nb = Math.max(4, percentile(bodyDog, .985));
+  const nf = Math.max(4, highEnd(faceSample)), nh = Math.max(4, highEnd(handSample)), nb = Math.max(4, percentile(bodyDog, .985));
   const line = new Float32Array(n);
-  for (let i = 0; i < n; i++) line[i] = clamp(lerp(bodyDog[i] / nb, faceDog[i] / (faceW[i] >= handW[i] ? nf : nh), detail[i]));
+  // Near a hand the coarse body field is switched off: it paints a wide band just outside the fingers.
+  for (let i = 0; i < n; i++) line[i] = clamp(lerp(bodyDog[i] / nb * (1 - clamp(handW[i] * 4)), faceDog[i] / (faceW[i] >= handW[i] ? nf : nh), detail[i]));
 
   // Structure tensor: a smooth stroke direction (along contours and hair strands) plus how coherent it is.
   const gx = new Float32Array(n), gy = new Float32Array(n);
@@ -270,25 +291,83 @@ function analyzeFace(base, face) { // everything that depends on where the face 
     gx[i] = (at(f, x + 1, y - 1) + 2 * at(f, x + 1, y) + at(f, x + 1, y + 1)) - (at(f, x - 1, y - 1) + 2 * at(f, x - 1, y) + at(f, x - 1, y + 1));
     gy[i] = (at(f, x - 1, y + 1) + 2 * at(f, x, y + 1) + at(f, x + 1, y + 1)) - (at(f, x - 1, y - 1) + 2 * at(f, x, y - 1) + at(f, x + 1, y - 1));
   }
+  // Precise edges for faces and hands: gradient magnitude thinned to a one-pixel ridge (non-maximum suppression).
+  // The DoG field above only marks the darker side of an edge, so a light hand against a dark backdrop lost its outline;
+  // this sits exactly on the boundary whichever side is darker.
+  const edgeMag = new Float32Array(n), edgeSample = [];
+  for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) {
+    const i = y * gw + x; if (detail[i] < .3) continue;
+    const m = Math.hypot(gx[i], gy[i]); if (m < 1) continue;
+    const o = Math.round(gy[i] / m) * gw + Math.round(gx[i] / m);
+    if (m >= Math.hypot(gx[i + o], gy[i + o]) && m >= Math.hypot(gx[i - o], gy[i - o])) { edgeMag[i] = m; if (i % 3 === 0) edgeSample.push(m); }
+  }
+  const ne = Math.max(60, highEnd(edgeSample) * .8);
+  for (let i = 0; i < n; i++) if (edgeMag[i]) line[i] = Math.max(line[i], clamp(edgeMag[i] / ne) * (handW[i] > faceW[i] ? .95 : .75) * clamp(detail[i] * 1.5));
+
+  // Hand outline from skin colour: the person mask is only 256×256 and turns fingers into mittens, so inside each
+  // hand the boundary of "this hand's skin tone" is used instead (sampled at its own joints).
+  const handSkin = new Float32Array(n), { rgba } = base;
+  const ycc = i => { const r = rgba[i * 4], g = rgba[i * 4 + 1], bl = rgba[i * 4 + 2]; return [.299 * r + .587 * g + .114 * bl, 128 - .168736 * r - .331264 * g + .5 * bl, 128 + .5 * r - .418688 * g - .081312 * bl]; };
+  for (const hand of marks?.hands ?? []) {
+    const samples = [];
+    const joints = [[0, 1], [0, 5], [0, 17], [5, 9], [9, 13], [1, 2], [5, 6], [9, 10], [13, 14], [17, 18], [6, 7], [10, 11]];
+    for (const [a, z] of joints) {
+      const x = Math.round((hand[a].x + hand[z].x) / 2), y = Math.round((hand[a].y + hand[z].y) / 2);
+      if (x > 0 && y > 0 && x < gw - 1 && y < gh - 1) samples.push(ycc(y * gw + x));
+    }
+    if (samples.length < 5) continue;
+    const med = k => samples.map(s => s[k]).sort((p, q) => p - q)[samples.length >> 1];
+    const [my, mcb, mcr] = [med(0), med(1), med(2)], palm = Math.hypot(hand[5].x - hand[17].x, hand[5].y - hand[17].y) || 20;
+    const xs = hand.map(p => p.x), ys = hand.map(p => p.y), grow = palm * .7;
+    for (let y = Math.max(1, Math.floor(Math.min(...ys) - grow)); y < Math.min(gh - 1, Math.max(...ys) + grow); y++)
+      for (let x = Math.max(1, Math.floor(Math.min(...xs) - grow)); x < Math.min(gw - 1, Math.max(...xs) + grow); x++) {
+        const i = y * gw + x; if (handW[i] < .05) continue;
+        const [yy, cb, cr] = ycc(i), chroma = Math.hypot(cb - mcb, cr - mcr);
+        handSkin[i] = Math.max(handSkin[i], clamp(1 - (chroma - 7) / 9) * clamp(1 - (Math.abs(yy - my) - 70) / 40));
+      }
+  }
+  const skinMask = blur(handSkin, gw, gh, 1);
+  // The skin mask is soft, so its edge is a wide band; used as a line it floated a few pixels off the fingers.
+  // Instead it only tells where the hand's true boundary is, and the one-pixel edge there is promoted to a full outline.
+  if (marks?.hands?.length) {
+    // Hands get their own contrast scale: a light hand on a white wall has faint edges next to a face full of dark hair.
+    const handEdges = []; for (let i = 0; i < n; i += 2) if (edgeMag[i] && handW[i] > .3) handEdges.push(edgeMag[i]);
+    const nhEdge = Math.max(30, Math.min(ne, highEnd(handEdges) * .7));
+    for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) {
+      const i = y * gw + x; if (handW[i] < .2) continue;
+      const sx = (skinMask[i + 1] - skinMask[i - 1]) / 2, sy = (skinMask[i + gw] - skinMask[i - gw]) / 2, sm = Math.hypot(sx, sy);
+      const boundary = clamp(sm * 6);
+      if (edgeMag[i]) line[i] = Math.max(line[i], clamp(edgeMag[i] / nhEdge * (1 + boundary * 1.5)) * lerp(.8, 1, boundary));
+      // Where brightness barely changes (skin against white), the colour boundary itself is the outline — thinned to one pixel.
+      if (sm > .08) {
+        const o = Math.round(sy / sm) * gw + Math.round(sx / sm), m = q => Math.hypot(skinMask[q + 1] - skinMask[q - 1], skinMask[q + gw] - skinMask[q - gw]) / 2;
+        if (sm >= m(i + o) && sm >= m(i - o)) line[i] = Math.max(line[i], clamp(sm * 5) * .8 * clamp(handW[i] * 2));
+      }
+    }
+  }
+
   const jxx = new Float32Array(n), jyy = new Float32Array(n), jxy = new Float32Array(n);
   for (let i = 0; i < n; i++) { jxx[i] = gx[i] * gx[i]; jyy[i] = gy[i] * gy[i]; jxy[i] = gx[i] * gy[i]; }
   const silhouette = new Float32Array(n);
-  if (base.person) {
-    // Silhouette: the edge of the person mask becomes a line too, so the figure always has a clear outer contour
-    // even where hair or clothing melts into a dark background. Its direction is fed into the stroke-direction field.
+  // Silhouette: the edge of a mask becomes a line too, so the figure always has a clear outer contour even where it
+  // melts into the background. Its direction is fed into the stroke-direction field.
+  const addMaskEdge = (p, weight, keepAt) => {
     for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) {
-      const i = y * gw + x, p = base.person;
+      const i = y * gw + x, k = keepAt(i); if (k <= 0) continue;
       const mx = (p[i + 1] - p[i - 1]) / 2, my = (p[i + gw] - p[i - gw]) / 2;
-      const sil = clamp(1 - Math.abs(p[i] - .5) * 4) * clamp(Math.hypot(mx, my) * 12);
+      const sil = clamp(1 - Math.abs(p[i] - .5) * 4) * clamp(Math.hypot(mx, my) * 12) * k;
       if (sil <= 0) continue;
-      line[i] = Math.max(line[i], sil * .7); silhouette[i] = sil;
+      line[i] = Math.max(line[i], sil * weight); silhouette[i] = Math.max(silhouette[i], sil);
       jxx[i] += (mx * 3000) ** 2 * sil; jyy[i] += (my * 3000) ** 2 * sil; jxy[i] += mx * my * 9e6 * sil;
     }
-  }
-  const sxx = blur(jxx, gw, gh, 3), syy = blur(jyy, gw, gh, 3), sxy = blur(jxy, gw, gh, 3), ang = new Float32Array(n), coh = new Float32Array(n);
+  };
+  if (base.person) addMaskEdge(base.person, .7, i => 1 - clamp(handW[i] * 2)); // the coarse person edge stays out of the hands
+  // Direction field: widely smoothed for calm long contours, barely smoothed on faces and hands so it bends with each finger.
+  const smooth = r => [blur(jxx, gw, gh, r), blur(jyy, gw, gh, r), blur(jxy, gw, gh, r)];
+  const [sxx, syy, sxy] = smooth(3), [fxx, fyy, fxy] = smooth(1), ang = new Float32Array(n), coh = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    const energy = sxx[i] + syy[i];
-    ang[i] = .5 * Math.atan2(2 * sxy[i], sxx[i] - syy[i]) + Math.PI / 2;
+    const energy = sxx[i] + syy[i], t = clamp(detail[i] * 1.5);
+    ang[i] = .5 * Math.atan2(2 * lerp(sxy[i], fxy[i], t), lerp(sxx[i], fxx[i], t) - lerp(syy[i], fyy[i], t)) + Math.PI / 2;
     coh[i] = Math.sqrt((sxx[i] - syy[i]) ** 2 + 4 * sxy[i] ** 2) / (energy + 1e-3) * clamp((energy - 50) / 400);
   }
 
@@ -305,7 +384,7 @@ function analyzeFace(base, face) { // everything that depends on where the face 
   const vLo = personValues[Math.floor(personValues.length * .03)] ?? 0, vHi = personValues[Math.floor(personValues.length * .97)] ?? 255;
   // Hair: around the head, darker than average and not skin-coloured. The face detector's ellipse reaches up into
   // the fringe, so position alone can't separate hair from forehead — colour and darkness do.
-  const hairRaw = new Float32Array(n), { rgba } = base;
+  const hairRaw = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     if (subject[i] < .5 || Math.hypot((i % gw - face.x) / (face.rx * 1.8), (((i / gw) | 0) - face.y) / (face.ry * 1.7)) > 1) continue;
     const r = rgba[i * 4], g = rgba[i * 4 + 1], bl = rgba[i * 4 + 2];
@@ -421,9 +500,12 @@ async function detectFace(base) {
   const guess = () => { const f = findFace(base.rgba, base.gw, base.gh); return { ...f, rx:Math.min(f.rx, base.gw * .3), ry:Math.min(f.ry, base.gh * .3) }; };
   try {
     const detector = await withTimeout(loadFaceDetector(), 25000);
-    const best = detector.detect(base.work).detections.filter(d => d.boundingBox)
-      .map(d => ({ box:d.boundingBox, keypoints:d.keypoints ?? [], score:d.boundingBox.width * d.boundingBox.height * (d.categories?.[0]?.score ?? 1) }))
-      .sort((a, z) => z.score - a.score)[0];
+    // Confidence first: a pet's face can be bigger than the person's, but it scores lower. Among confident faces, prefer the larger.
+    const found = detector.detect(base.work).detections.filter(d => d.boundingBox)
+      .map(d => ({ box:d.boundingBox, keypoints:d.keypoints ?? [], confidence:d.categories?.[0]?.score ?? 1 }));
+    const top = Math.max(0, ...found.map(d => d.confidence));
+    const best = found.filter(d => d.confidence >= top - .12)
+      .sort((a, z) => z.box.width * z.box.height * z.confidence - a.box.width * a.box.height * a.confidence)[0];
     if (!best) return { ...guess(), source:'none' };
     // BlazeFace keypoints 0 and 1 are the two eyes (normalized to the input image).
     const eyes = best.keypoints.length >= 2 ? best.keypoints.slice(0, 2).map(k => ({ x:k.x * base.gw, y:k.y * base.gh })) : null;
@@ -458,33 +540,111 @@ function traceContours(A) {
       if (line[i] < low(i) || (owner[i] && owner[i] !== id)) break;
       let tx = Math.cos(ang[i]), ty = Math.sin(ang[i]);
       if (tx * dx + ty * dy < 0) { tx = -tx; ty = -ty; }
-      if (tx * dx + ty * dy < .8) break; // a sharp corner ends the stroke, like lifting the pencil
+      // A sharp corner ends the stroke, like lifting the pencil — but fingers and features bend a lot, so they turn further.
+      if (tx * dx + ty * dy < (detail[i] > .5 ? .45 : .8)) break;
       dx = dx * .55 + tx * .45; dy = dy * .55 + ty * .45; const l = Math.hypot(dx, dy); dx /= l; dy /= l;
       x = nx; y = ny; pts.push({ x, y });
     }
     return pts;
   };
+  const describe = pts => { // per-stroke statistics used for budgeting and styling
+    const zones = new Float32Array(8); let sum = 0, faceSum = 0, handSum = 0, subjectSum = 0, headSum = 0, eyeSum = 0, len = 0;
+    pts.forEach((p, k) => {
+      const i = clamp(Math.round(p.y), 0, gh - 1) * gw + clamp(Math.round(p.x), 0, gw - 1);
+      sum += line[i]; faceSum += faceW[i]; handSum += handW[i]; subjectSum += subject[i]; headSum += head[i]; eyeSum += eyeW[i];
+      for (let b = 0; b < 8; b++) if (zone[i] & (1 << b)) zones[b]++;
+      if (k) len += Math.hypot(p.x - pts[k - 1].x, p.y - pts[k - 1].y);
+    });
+    const m = pts.length, hand = handSum / m;
+    return { raw:pts, len, strength:clamp(sum / m), face:faceSum / m, hand, head:headSum / m > .5 && hand < .5, eye:eyeSum / m,
+      zones:Array.from(zones, c => c / m), subject:subjectSum / m, fine:detail[clamp(Math.round(pts[m >> 1].y), 0, gh - 1) * gw + clamp(Math.round(pts[m >> 1].x), 0, gw - 1)] > .5, meshed:!!A.marks?.mesh };
+  };
+  const claim = (pts, id, radius) => {
+    for (const p of pts) {
+      const px = Math.round(p.x), py = Math.round(p.y);
+      for (let v = -radius; v <= radius; v++) for (let u = -radius; u <= radius; u++) {
+        const j = (py + v) * gw + px + u; if (j >= 0 && j < owner.length && !owner[j]) owner[j] = id;
+      }
+    }
+  };
   const strokes = []; let id = 0;
+  // Mesh-guided feature lines first: upper lash lines and the lip line follow the face mesh, snapped onto the photo's
+  // own darkest ridge, so eyes and mouth keep their exact shape instead of whatever fragments the tracer finds.
+  for (const guide of featureGuides(A)) {
+    const s = describe(guide.pts); id++; claim(guide.pts, id, 2);
+    strokes.push({ ...s, strength:Math.max(s.strength, guide.strength), guide:guide.kind });
+  }
   for (const seed of seeds) {
     if (owner[seed]) continue;
     id++;
     const sx = seed % gw, sy = (seed / gw) | 0;
     const pts = walk(sx, sy, ang[seed] + Math.PI, id).reverse().concat([{ x:sx, y:sy }], walk(sx, sy, ang[seed], id));
     const len = (pts.length - 1) * STEP, fine = detail[seed] > .5;
-    if (len < (fine ? 6 : head[seed] ? 16 : 20)) continue; // short marks outside the face and hands read as fur
-    const radius = fine ? 2 : 3, zones = new Float32Array(8); let sum = 0, faceSum = 0, handSum = 0, subjectSum = 0, headSum = 0, eyeSum = 0;
-    for (const p of pts) {
-      const px = Math.round(p.x), py = Math.round(p.y), i = py * gw + px; sum += line[i]; faceSum += faceW[i]; handSum += handW[i]; subjectSum += subject[i]; headSum += head[i]; eyeSum += eyeW[i];
-      for (let k = 0; k < 8; k++) if (zone[i] & (1 << k)) zones[k]++;
-      for (let v = -radius; v <= radius; v++) for (let u = -radius; u <= radius; u++) {
-        const j = (py + v) * gw + px + u; if (j >= 0 && j < owner.length && !owner[j]) owner[j] = id;
+    // Short marks outside the face read as fur; on hands, stubs read as dirt, so they need a little length too.
+    if (len < (fine ? (handW[seed] > faceW[seed] ? 10 : 6) : head[seed] ? 16 : 20)) continue;
+    claim(pts, id, fine ? 2 : 3);
+    const s = describe(pts);
+    if (s.subject < .5) continue; // background lines are never drawn
+    strokes.push(s);
+  }
+  return linkFragments(strokes);
+}
+function linkFragments(strokes) {
+  // In faces and hands an outline often pauses at a knuckle or a crease and resumes a few pixels on.
+  // Join such fragments end to end, so a finger reads as one continuous pencil line.
+  const fine = strokes.filter(s => s.fine && !s.guide), rest = strokes.filter(s => !(s.fine && !s.guide));
+  const ends = s => { const p = s.raw, n = p.length, k = Math.min(3, n - 1);
+    return { head:p[0], headDir:{ x:p[0].x - p[k].x, y:p[0].y - p[k].y }, tail:p[n - 1], tailDir:{ x:p[n - 1].x - p[n - 1 - k].x, y:p[n - 1].y - p[n - 1 - k].y } }; };
+  const unit = v => { const l = Math.hypot(v.x, v.y) || 1; return { x:v.x / l, y:v.y / l }; };
+  let merged = true;
+  while (merged) {
+    merged = false;
+    outer: for (let a = 0; a < fine.length; a++) for (let b = 0; b < fine.length; b++) {
+      if (a === b) continue;
+      const A = ends(fine[a]);
+      for (const flip of [false, true]) {
+        const B = ends(fine[b]), start = flip ? B.tail : B.head, into = unit(flip ? B.tailDir : B.headDir);
+        const gap = Math.hypot(start.x - A.tail.x, start.y - A.tail.y); if (gap > 5) continue;
+        const out = unit(A.tailDir), bridge = unit({ x:start.x - A.tail.x, y:start.y - A.tail.y });
+        // Continue roughly straight on: A leaves one way, B arrives from the opposite side.
+        if (out.x * -into.x + out.y * -into.y < .35 || (gap > 1.5 && out.x * bridge.x + out.y * bridge.y < .2)) continue;
+        const pts = fine[a].raw.concat(flip ? fine[b].raw.slice().reverse() : fine[b].raw);
+        const na = fine[a].raw.length, nb = fine[b].raw.length, w = x => x / (na + nb);
+        const zones = fine[a].zones.map((z, k) => z * w(na) + fine[b].zones[k] * w(nb));
+        fine[a] = { ...fine[a], raw:pts, len:fine[a].len + fine[b].len + gap, zones,
+          strength:fine[a].strength * w(na) + fine[b].strength * w(nb), face:fine[a].face * w(na) + fine[b].face * w(nb),
+          hand:fine[a].hand * w(na) + fine[b].hand * w(nb), eye:fine[a].eye * w(na) + fine[b].eye * w(nb) };
+        fine.splice(b, 1); merged = true; break outer;
       }
     }
-    if (subjectSum / pts.length < .5) continue; // background lines are never drawn
-    const m = pts.length, hand = handSum / m;
-    strokes.push({ raw:pts, len, strength:clamp(sum / m), face:faceSum / m, hand, head:headSum / m > .5 && hand < .5, eye:eyeSum / m, zones:Array.from(zones, c => c / m), meshed:!!A.marks?.mesh });
   }
-  return strokes;
+  return rest.concat(fine);
+}
+function featureGuides(A) {
+  const mesh = A.marks?.mesh; if (!mesh) return [];
+  const { gw, gh, line, b1, skinHi } = A, guides = [];
+  const sample = (f, x, y) => f[clamp(Math.round(y), 0, gh - 1) * gw + clamp(Math.round(x), 0, gw - 1)];
+  const snap = ids => { // pull each mesh point up to 2px along its normal onto the strongest line response
+    const pts = ids.map(i => ({ ...mesh[i] }));
+    return pts.map((p, k) => {
+      const a = pts[Math.max(0, k - 1)], z = pts[Math.min(pts.length - 1, k + 1)], l = Math.hypot(z.x - a.x, z.y - a.y) || 1, nx = -(z.y - a.y) / l, ny = (z.x - a.x) / l;
+      let best = p, score = -1;
+      for (let o = -2; o <= 2; o += .5) { const q = { x:p.x + nx * o, y:p.y + ny * o }, v = sample(line, q.x, q.y) - Math.abs(o) * .03; if (v > score) { score = v; best = q; } }
+      return best;
+    });
+  };
+  const densify = pts => { const out = [pts[0]]; for (let k = 1; k < pts.length; k++) { const a = pts[k - 1], z = pts[k]; out.push({ x:(a.x + z.x) / 2, y:(a.y + z.y) / 2 }, z); } return out; };
+  const add = (ids, kind) => {
+    const pts = densify(snap(ids)), dark = pts.reduce((s, p) => s + clamp((skinHi - sample(b1, p.x, p.y)) / 120), 0) / pts.length;
+    if (dark > .12) guides.push({ pts, kind, strength:clamp(.5 + dark) });
+  };
+  // Upper lids (outer corner → inner corner) carry the lash line; the lip line is where the lips meet.
+  add([33, 246, 161, 160, 159, 158, 157, 173, 133], 'lash');
+  add([263, 466, 388, 387, 386, 385, 384, 398, 362], 'lash');
+  const gapOpen = Math.hypot(mesh[13].x - mesh[14].x, mesh[13].y - mesh[14].y) > Math.hypot(mesh[61].x - mesh[291].x, mesh[61].y - mesh[291].y) * .08;
+  add([78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308], 'lip');
+  if (gapOpen) add([78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308], 'lip'); // open mouth or a smile: the lower inner lip too
+  return guides;
 }
 function makeShading(A, density, rand) {
   // Croquis shading: a few parallel diagonal strokes laid only into folds and cast shadows (the shadow field),
@@ -713,7 +873,8 @@ function finalizeStroke(s, rand, ox, oy) {
   const pts = resample(chaikin(s.raw), 2).map(p => ({ x:p.x + ox, y:p.y + oy }));
   const n = pts.length; if (n < 2) return null;
   const x = new Float32Array(n), y = new Float32Array(n), pr = new Float32Array(n);
-  const wobble = { hatch:.08, fill:.15 }[s.kind] ?? .55, freq = 1 + rand() * 2.5, phase = rand() * 6.28;
+  // Hand tremor: loose on the body, nearly none on faces and hands, where a pixel of drift changes the likeness.
+  const wobble = { hatch:.08, fill:.15 }[s.kind] ?? (s.fine ? .15 : .55), freq = 1 + rand() * 2.5, phase = rand() * 6.28;
   let len = 0;
   for (let i = 0; i < n; i++) {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
