@@ -10,6 +10,7 @@ const signatureToggle = document.querySelector('#signature');
 const titleInput = document.querySelector('#title');
 const introToggle = document.querySelector('#intro');
 const messageInput = document.querySelector('#message');
+const talkToggle = document.querySelector('#talk');
 const soundToggle = document.querySelector('#sound');
 const volume = document.querySelector('#volume');
 const preview = document.querySelector('#preview');
@@ -1514,7 +1515,106 @@ function messageStrokes(glyphs, strokes, startMs, rand, pace, text, A) {
   }
   return out;
 }
-function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = true, showIntro = true, message = '') {
+// ───────────────────────── talking portrait ─────────────────────────
+// After the signature the finished sketch "says" the handwritten line: the lower lip and jaw are pulled down syllable by
+// syllable (the gap filled with a pencil-dark mouth), and the eyes blink once. Pure image warping on the drawn sheet.
+function planTalk(A, text, startMs, endMs) {
+  // Spoken while the same line is being handwritten: the syllables are spread over the writing time.
+  const mesh = A.marks?.mesh; if (!mesh || !text) return null;
+  const P = i => ({ x:mesh[i].x + A.b.x, y:mesh[i].y + A.b.y });
+  const left = P(61), right = P(291), top = P(13), bottom = P(14), chin = P(152), nose = P(2);
+  const mouthW = Math.hypot(right.x - left.x, right.y - left.y); if (mouthW < 12) return null;
+  const eye = (up, low, a, z) => { const c = { x:(P(up).x + P(low).x) / 2, y:(P(up).y + P(low).y) / 2 }, w = Math.hypot(P(z).x - P(a).x, P(z).y - P(a).y); return { ...c, w }; };
+  // Syllable rhythm: each non-space character opens and closes the mouth once; a space is a short rest.
+  const beats = [], speakMs = Math.max(600, endMs - startMs), rand = random(55);
+  const chars = [...text], units = chars.reduce((a, ch) => a + (/\s/.test(ch) ? .6 : /[!?.,~]/.test(ch) ? .5 : 1), 0) || 1;
+  let t = startMs;
+  for (const ch of chars) {
+    const len = speakMs * (/\s/.test(ch) ? .6 : /[!?.,~]/.test(ch) ? .5 : 1) / units;
+    if (!/[\s!?.,~]/.test(ch)) beats.push({ start:t, end:t + len, amp:.65 + rand() * .35 });
+    t += len;
+  }
+  return { start:startMs, end:t + 150, beats, left, right, top, bottom, chin, nose, mouthW,
+    eyes:[eye(159, 145, 33, 133), eye(386, 374, 263, 362)], blinkAt:startMs + speakMs * .55 };
+}
+let talkSnapshot = null;
+function drawTalk(t) {
+  const talk = plan?.talk; if (!talk || t < talk.start || t > talk.end) return;
+  // Snapshot of the finished sheet (taken once), so the warp always samples the complete drawing.
+  if (!talkSnapshot || talkSnapshot.plan !== plan || talkSnapshot.darkness !== inkDarkness) {
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d', { willReadFrequently:true });
+    g.drawImage(paperCanvas, 0, 0);
+    if (plan.aiLayer) g.drawImage(aiFrame, 0, 0); // drawSheet has just composed the fully revealed AI graphite
+    g.drawImage(ink, 0, 0);
+    talkSnapshot = { plan, darkness:inkDarkness, data:g.getImageData(0, 0, W, H), paper:paperCanvas.getContext('2d').getImageData(0, 0, W, H).data };
+  }
+  const src = talkSnapshot.data.data;
+  let open = 0;
+  for (const beat of talk.beats) if (t >= beat.start && t <= beat.end) open = Math.pow(Math.sin(Math.PI * (t - beat.start) / (beat.end - beat.start)), .8) * beat.amp;
+  const blink = Math.max(0, 1 - Math.abs(t - talk.blinkAt) / 110);
+  if (open > .01) warpMouth(talk, open, src, talkSnapshot.paper);
+  if (blink > .01) for (const e of talk.eyes) closeEye(e, blink);
+}
+const talkBuffer = { canvas:document.createElement('canvas'), image:null };
+function warpMouth(talk, open, src, paper) {
+  // The lips part as a lens (wide in the middle, closed at the corners); everything under the lower lip slides down
+  // with it, easing into a gentler jaw drop further down and fading out under the chin.
+  const { left, right, top, bottom, chin, mouthW } = talk, drop = mouthW * .3 * open, half = mouthW * .5;
+  const cx = (left.x + right.x) / 2, midLip = (top.y + bottom.y) / 2, cornerMid = (left.y + right.y) / 2;
+  const x0 = Math.floor(cx - mouthW * 1.2), x1 = Math.ceil(cx + mouthW * 1.2);
+  const y0 = Math.floor(Math.min(left.y, right.y, midLip) - 4), jawEnd = chin.y + mouthW * .5, y1 = Math.ceil(jawEnd + drop + 2);
+  const w = x1 - x0, h = y1 - y0; if (w <= 0 || h <= 0) return;
+  const buf = talkBuffer; if (buf.canvas.width < w || buf.canvas.height < h) { buf.canvas.width = Math.max(w, buf.canvas.width); buf.canvas.height = Math.max(h, buf.canvas.height); buf.image = null; }
+  if (!buf.image || buf.image.width !== w || buf.image.height !== h) buf.image = new ImageData(w, h);
+  const out = buf.image.data, field = tooth.field, TS = tooth.size, blend = mouthW * .45;
+  for (let x = 0; x < w; x++) {
+    const X = x0 + x, u = (X - left.x) / ((right.x - left.x) || 1);
+    const lip = lerp(left.y, right.y, u) + (midLip - cornerMid) * (1 - (2 * u - 1) ** 2);
+    const across = Math.abs(X - cx) / half, lens = across < 1 ? Math.sqrt(1 - across * across) : 0;
+    const bump = across < 2.4 ? .5 + .5 * Math.cos(Math.PI * across / 2.4) : 0;
+    const gapH = drop * lens, jawD = drop * .75 * bump;
+    for (let y = 0; y < h; y++) {
+      const Y = y0 + y, p = (y * w + x) * 4;
+      let sy = Y, dark = 0;
+      if (Y >= lip) {
+        const k = clamp((Y - lip - gapH) / blend), d = lerp(gapH, jawD, k) * (Y > chin.y ? clamp(1 - (Y - chin.y) / (jawEnd - chin.y)) : 1);
+        if (Y < lip + gapH) { // inside the parted lips: bare paper with a soft pencil-shaded mouth (no stretched teeth)
+          const v = (Y - lip) / gapH, core = Math.sin(Math.PI * v) * lens;
+          dark = clamp(core * 1.3) * (.42 + field[(Y % TS) * TS + X % TS] * .2) * (.8 + .2 * Math.sin((X + Y) * 1.3));
+          const q = (Y * W + X) * 4;
+          for (let c = 0; c < 3; c++) out[p + c] = paper[q + c] * (1 - dark) + 42 * dark;
+          out[p + 3] = 255; continue;
+        }
+        sy = Y - d;
+      }
+      // Bilinear sample of the finished sheet.
+      const yy = clamp(sy, 0, H - 1.001), y0i = yy | 0, fy = yy - y0i, i0 = (y0i * W + X) * 4, i1 = i0 + W * 4;
+      for (let c = 0; c < 3; c++) out[p + c] = src[i0 + c] * (1 - fy) + src[i1 + c] * fy;
+      out[p + 3] = 255;
+    }
+  }
+  buf.canvas.getContext('2d').putImageData(buf.image, 0, 0);
+  onSheet(() => ctx.drawImage(buf.canvas, 0, 0, w, h, x0, y0, w, h));
+}
+function closeEye(e, blink) {
+  // A blink in pencil: the open eye is covered with paper and a closed-lid curve (with a few lashes) is drawn over it.
+  const rx = e.w * .62, ry = e.w * .34, a = Math.min(1, blink * 1.6);
+  onSheet(() => {
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.beginPath(); ctx.ellipse(e.x, e.y, rx, ry, 0, 0, Math.PI * 2); ctx.clip();
+    ctx.filter = 'blur(1.5px)'; ctx.drawImage(paperCanvas, 0, 0); ctx.filter = 'none';
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = a; ctx.strokeStyle = inkCtx.strokeStyle; ctx.lineCap = 'round';
+    const x0 = e.x - e.w * .52, x1 = e.x + e.w * .52, y = e.y + e.w * .04, sag = e.w * .16;
+    ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(x0, y - sag * .2); ctx.quadraticCurveTo(e.x, y + sag, x1, y - sag * .2); ctx.stroke();
+    ctx.lineWidth = 1.2;
+    for (const f of [.3, .5, .7]) { const px = lerp(x0, x1, f), py = y + sag * (1 - (2 * f - 1) ** 2) * .5 + sag * .1; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + (f - .5) * 6, py + e.w * .1); ctx.stroke(); }
+    ctx.restore();
+  });
+}
+function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = true, showIntro = true, message = '', talking = false) {
   const density = densityPercent / 100, rand = random(1234), { b, face } = A;
   const totalMs = durationSec * 1000, outroMs = Math.min(1200, totalMs * .07);
   // Opening: the reference photo sits on the canvas for a moment, then fades away to bare paper before the pencil comes in.
@@ -1523,6 +1623,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const signMs = signature ? SIGN_MS * signPace(totalMs) : 0;
   const messageText = (message ?? '').trim(), glyphs = messageText ? messageGlyphs(messageText) : null;
   const writeMsgMs = glyphs ? messageMs(messageText, signPace(totalMs)) : 0;
+  const speak = talking && messageText && A.marks?.mesh;
   const drawMs = totalMs - leadMs - outroMs - signMs - writeMsgMs;
   let capacity = (drawMs / 1000) * SPEED;
   const cost = s => strokeCost(s.kind, s.len);
@@ -1615,11 +1716,18 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const scale = strokes.length ? drawMs / t : 0;
   for (const s of strokes) { s.tLift = s.tLift * scale + (s === strokes[0] ? introMs : leadMs); s.tDown = s.tDown * scale + leadMs; s.tUp = s.tUp * scale + leadMs; }
   const drawEndMs = leadMs + drawMs, faceEndMs = faceEndIndex && strokes[faceEndIndex - 1] ? strokes[faceEndIndex - 1].tUp : 0;
-  let finaleMs = drawEndMs;
-  if (glyphs) { const msg = messageStrokes(glyphs, strokes, drawEndMs, random(777), signPace(totalMs), messageText, A); strokes.push(...msg); if (msg.length) finaleMs = msg[msg.length - 1].tUp; }
+  let finaleMs = drawEndMs, talk = null;
+  if (glyphs) {
+    const msg = messageStrokes(glyphs, strokes, drawEndMs, random(777), signPace(totalMs), messageText, A); strokes.push(...msg);
+    if (msg.length) {
+      finaleMs = msg[msg.length - 1].tUp;
+      if (speak) talk = planTalk(A, messageText, msg[0].tDown, finaleMs); // the portrait says the line as it is written
+    }
+  }
   if (signature) strokes.push(...signatureStrokes(strokes, finaleMs, random(4321), signPace(totalMs)));
+  const exitMs = Math.min(700, outroMs * .75);
 
-  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, ai:!!ai,
+  return { strokes, totalMs, drawEndMs, exitMs, talk, entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, ai:!!ai,
     intro:intro && { ...intro, photo:A.work, face:A.face }, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
 }
 
@@ -1702,6 +1810,7 @@ function renderFrame(t) {
   ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(sceneCanvas, 0, 0);
   onSheet(() => { ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawSheet(t); });
+  drawTalk(t);
   drawPolaroid(t);
   drawTitle();
   if (!plan) return;
@@ -1914,7 +2023,7 @@ function drawFaceGuide(box) {
 }
 function rebuild() {
   if (!analysis) return;
-  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, signatureToggle?.checked ?? true, introToggle?.checked ?? true, messageInput?.value ?? '');
+  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, signatureToggle?.checked ?? true, introToggle?.checked ?? true, messageInput?.value ?? '', talkToggle?.checked ?? false);
   resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
   const faceAt = plan.faceEndMs ? ` 얼굴은 ${(plan.faceEndMs / 1000).toFixed(1)}초에 완성됩니다.` : '';
   const hands = analysis.marks?.hands?.length ?? 0, detailNote = analysis.marks?.mesh ? ` 이목구비${hands ? `와 손 ${hands}개` : ''}를 세밀하게 그립니다.` : '';
@@ -1922,7 +2031,7 @@ function rebuild() {
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy;
   strength.disabled = busy || styleSelect.value === 'line'; // shadow amount only matters when shading is drawn
 }
 let loadToken = 0;
@@ -1981,6 +2090,7 @@ styleSelect.addEventListener('change', async () => {
 });
 signatureToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 introToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
+talkToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 let messageTimer = 0; // re-plan shortly after typing stops, not on every keystroke
 messageInput?.addEventListener('input', () => { clearTimeout(messageTimer); messageTimer = setTimeout(() => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); }, 350); });
 titleInput?.addEventListener('input', () => {
