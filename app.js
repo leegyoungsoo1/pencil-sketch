@@ -6,6 +6,7 @@ const strength = document.querySelector('#strength');
 const styleSelect = document.querySelector('#style');
 const darkness = document.querySelector('#darkness');
 const formatSelect = document.querySelector('#format');
+const signatureToggle = document.querySelector('#signature');
 const soundToggle = document.querySelector('#sound');
 const volume = document.querySelector('#volume');
 const preview = document.querySelector('#preview');
@@ -24,6 +25,39 @@ const KIND = {
   accent:    { speed:0.9, lift:34, overhead:8 },
 };
 const strokeCost = (kind, len) => len / KIND[kind].speed + KIND[kind].overhead;
+const SIGNATURE = { // "David Lee" — Allura (OFL) skeleton, reshaped: more slant, long rising tail
+  aspect:5.54, dot:[5.508,0.327],
+  paths:[
+    [0.096,0.494,0.074,0.492,0.037,0.474,0.015,0.457,0.002,0.437,0.006,0.381,0.041,0.293,0.106,0.23,0.187,0.17,0.266,0.128,0.365,0.091,0.499,0.058,0.609,0.044,0.727,0.045,0.843,0.057,0.893,0.079,0.952,0.127,0.981,0.169,0.997,0.215,0.991,0.305,0.973,0.389,0.948,0.456,0.913,0.514,0.826,0.616,0.743,0.694,0.647,0.755,0.573,0.792,0.465,0.823,0.354,0.829,0.279,0.816,0.187,0.772,0.161,0.766,0.13,0.821,0.098,0.857,0.068,0.873,0.053,0.872,0.04,0.842,0.042,0.797,0.1,0.574],
+    [0.074,0.662,0.116,0.692,0.157,0.743,0.164,0.762,0.186,0.74,0.261,0.62,0.379,0.45,0.409,0.394,0.443,0.349,0.58,0.226,0.625,0.199,0.652,0.199],
+    [0.235,0.662,0.3,0.566],
+    [0.412,0.391,0.472,0.319],
+    [1.298,0.598,1.269,0.603,1.251,0.613,1.088,0.745,1.034,0.781,0.994,0.8,0.96,0.797,0.945,0.785,0.935,0.767,0.938,0.711,0.946,0.687,0.967,0.655,1.02,0.599,1.104,0.531,1.168,0.488,1.254,0.44,1.3,0.426,1.339,0.423,1.375,0.434,1.403,0.454],
+    [1.348,0.534,1.31,0.584,1.282,0.636,1.25,0.733,1.245,0.775,1.255,0.796,1.28,0.805,1.315,0.803,1.345,0.793,1.467,0.694,1.521,0.642,1.56,0.593,1.571,0.584,1.604,0.573,1.62,0.559,1.65,0.484,1.651,0.442,1.628,0.426,1.584,0.43],
+    [1.431,0.725,1.495,0.67],
+    [1.514,0.813,1.518,0.798,1.534,0.78,1.592,0.734,1.728,0.593,1.904,0.434,1.972,0.386,2.038,0.354,2.077,0.352,2.092,0.36,2.102,0.375],
+    [1.529,0.781,1.542,0.73,1.592,0.624,1.613,0.566],
+    [1.825,0.502,1.863,0.462],
+    [1.891,0.67,1.924,0.637,1.97,0.62,2.077,0.454],
+    [1.936,0.63,1.948,0.64,1.945,0.666,1.911,0.755,1.909,0.772,1.929,0.801,1.951,0.808,1.983,0.803,2.026,0.782,2.127,0.712,2.179,0.689,2.201,0.662],
+    [2.159,0.319,2.168,0.319,2.19,0.304,2.242,0.239],
+    [2.595,0.534,2.575,0.561,2.545,0.571,2.498,0.602,2.381,0.702,2.251,0.794,2.219,0.803,2.195,0.797,2.175,0.769,2.17,0.745,2.183,0.694,2.216,0.64,2.337,0.537,2.407,0.486,2.457,0.456,2.512,0.432,2.566,0.423,2.623,0.432,2.641,0.45,2.64,0.47,2.576,0.565,2.493,0.734,2.467,0.803,2.444,0.902,2.458,0.932,2.488,0.953,2.525,0.949,2.561,0.925],
+    [2.419,0.67,2.51,0.59],
+    [2.648,0.462,2.664,0.45,2.685,0.451,2.717,0.439,2.79,0.391,2.942,0.262,3.04,0.166,3.085,0.102,3.103,0.046,3.103,0.034,3.093,0.022,3.054,0.016],
+    [2.666,0.446,2.677,0.417,2.716,0.351,2.814,0.216,2.877,0.146,2.988,0.048],
+    [2.789,0.255,2.827,0.201,2.869,0.158,2.885,0.134,2.963,0.064],
+    [2.868,0.327,2.977,0.231],
+    [2.864,0.845,2.882,0.832,2.916,0.824,3.041,0.841,3.152,0.875,3.417,0.977,3.459,0.99,3.518,0.999,3.604,0.995,3.664,0.974,3.684,0.953,3.693,0.931,3.693,0.901,3.684,0.885],
+    [3.017,0.486,3.011,0.48,2.996,0.483,2.963,0.511,2.945,0.544,2.942,0.575,2.949,0.589,2.966,0.601,2.985,0.604,3.116,0.601,3.163,0.548,3.226,0.442,3.371,0.237,3.437,0.154,3.496,0.092,3.549,0.048,3.597,0.02,3.657,0.002,3.688,0,3.711,0.006,3.729,0.027,3.734,0.047,3.716,0.128,3.65,0.237,3.585,0.313,3.482,0.405,3.384,0.472,3.236,0.549,3.196,0.563,3.148,0.562,3.137,0.574],
+    [2.936,0.821,2.943,0.806,3.037,0.705,3.117,0.598],
+    [3.004,0.741,3.055,0.678],
+    [3.276,0.375,3.341,0.279],
+    [3.354,0.486,3.43,0.438],
+    [3.473,0.112,3.52,0.064],
+    [3.559,0.654,3.673,0.615,3.712,0.592,3.755,0.557,3.796,0.515,3.817,0.481,3.821,0.44,3.794,0.43,3.729,0.445,3.68,0.471,3.577,0.55,3.516,0.608,3.475,0.658,3.444,0.712,3.441,0.762,3.454,0.798,3.484,0.817,3.541,0.821,3.604,0.809,3.648,0.789,3.77,0.711,3.852,0.68,3.892,0.63,4.027,0.503,4.097,0.46,4.162,0.433,4.201,0.431,4.217,0.44,4.209,0.494,4.189,0.527,4.159,0.555,4.079,0.609,4.024,0.634,3.955,0.654],
+    [3.865,0.662,3.848,0.685,3.836,0.733,3.837,0.766,3.852,0.796,3.873,0.814,3.889,0.819,3.948,0.821,3.986,0.816,4.102,0.756,4.185,0.695,4.24,0.644,4.342,0.535,4.426,0.466,4.518,0.408,4.616,0.36,4.72,0.322,4.832,0.295,4.951,0.278,5.076,0.271,5.209,0.274,5.348,0.287],
+  ],
+};
 let source = null, analysis = null, plan = null, raf = 0, session = null;
 
 // ───────────────────────── utilities ─────────────────────────
@@ -946,10 +980,52 @@ function orderHatching(list, from) {
   }
   return out;
 }
-function buildPlan(A, durationSec, densityPercent, style = 'shade') {
+function placeSignature(strokes) {
+  // Signed in the top-left corner like an artist's mark; if the drawing crowds that corner, the top-right instead.
+  const width = W * .28, height = width / SIGNATURE.aspect, margin = 24;
+  const corners = [{ x:PAD + margin, y:PAD + margin + 6 }, { x:W - PAD - margin - width, y:PAD + margin + 6 }];
+  const crowding = c => {
+    let hits = 0;
+    for (const s of strokes) for (let i = 0; i < s.n; i += 3) if (s.x[i] > c.x - 12 && s.x[i] < c.x + width + 12 && s.y[i] > c.y - 12 && s.y[i] < c.y + height + 16) hits++;
+    return hits;
+  };
+  const scores = corners.map(crowding), corner = scores[0] <= 4 || scores[0] <= scores[1] ? corners[0] : corners[1];
+  const to = (x, y) => ({ x:corner.x + x * height, y:corner.y + y * height });
+  return { paths:SIGNATURE.paths.map(flat => { const pts = []; for (let k = 0; k < flat.length; k += 2) pts.push(to(flat[k], flat[k + 1])); return pts; }), dot:to(...SIGNATURE.dot), height };
+}
+const SIGN_MS = 3000; // travel + name + pause + tap + a moment before the pencil leaves, at full pace
+const signPace = totalMs => clamp(totalMs / 12000, .55, 1); // short videos sign a little faster
+function signatureStrokes(strokes, startMs, rand, pace) {
+  // The name is written in one quick, continuous gesture, then a short pause, a lift — and the full stop: "탁".
+  const { paths, dot, height } = placeSignature(strokes), out = [];
+  for (const raw of paths) {
+    const s = finalizeStroke({ raw, kind:'sign', fine:true, face:0, strength:1 }, rand, 0, 0);
+    if (s) out.push(Object.assign(s, { width:1.5, alpha:.95, ghost:.25 }));
+  }
+  const writeMs = 1150 * pace, travelMs = 420 * pace, pauseMs = 260 * pace, tapMs = 70, total = out.reduce((a, s) => a + s.len, 0) || 1;
+  let t = startMs + travelMs, prev = null;
+  for (const s of out) {
+    const gap = prev ? Math.hypot(s.x[0] - prev.x[prev.n - 1], s.y[0] - prev.y[prev.n - 1]) : 0;
+    s.chain = !!prev && gap < height * .18; // letters that touch are joined without lifting the pencil
+    s.tLift = prev ? prev.tUp : startMs;
+    t += prev ? (s.chain ? 10 : 35 + gap * .5) * pace : 0;
+    s.tDown = t; t += writeMs * s.len / total; s.tUp = t; prev = s;
+  }
+  // The dot: a tight little press of graphite, placed after a beat.
+  const ring = []; for (let a = 0; a <= Math.PI * 5; a += Math.PI / 6) { const r = 2.4 * (1 - a / (Math.PI * 6)); ring.push({ x:dot.x + Math.cos(a) * r, y:dot.y + Math.sin(a) * r }); }
+  const tap = finalizeStroke({ raw:ring, kind:'dot', fine:true, face:0, strength:1 }, rand, 0, 0);
+  if (tap) {
+    tap.pr.fill(1); // pressed firmly all the way — no tapered ends on a dot
+    Object.assign(tap, { width:2.4, alpha:1, ghost:.5, tLift:prev ? prev.tUp : startMs });
+    tap.tDown = t + pauseMs; tap.tUp = tap.tDown + tapMs; out.push(tap);
+  }
+  return out;
+}
+function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = true) {
   const density = densityPercent / 100, rand = random(1234), { b, face } = A;
   const totalMs = durationSec * 1000, leadMs = 380, outroMs = Math.min(1200, totalMs * .07);
-  const drawMs = totalMs - leadMs - outroMs;
+  const signMs = signature ? SIGN_MS * signPace(totalMs) : 0;
+  const drawMs = totalMs - leadMs - outroMs - signMs;
   const capacity = (drawMs / 1000) * SPEED;
   const cost = s => strokeCost(s.kind, s.len);
   const prep = (list, kind) => list.map(s => finalizeStroke(kind ? { ...s, kind } : s, rand, b.x, b.y)).filter(Boolean);
@@ -1024,6 +1100,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade') {
   const scale = strokes.length ? drawMs / t : 0;
   for (const s of strokes) { s.tLift = s.tLift * scale + (s === strokes[0] ? 0 : leadMs); s.tDown = s.tDown * scale + leadMs; s.tUp = s.tUp * scale + leadMs; }
   const drawEndMs = leadMs + drawMs, faceEndMs = faceEndIndex && strokes[faceEndIndex - 1] ? strokes[faceEndIndex - 1].tUp : 0;
+  if (signature) strokes.push(...signatureStrokes(strokes, drawEndMs, random(4321), signPace(totalMs)));
 
   return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 60, y:H * .9 }, faceEndMs, outside:A.outside, stats, audio:buildAudioEvents(strokes) };
 }
@@ -1052,17 +1129,19 @@ function advanceInk(t) {
   if (t < cursor.time) resetInk();
   cursor.time = t;
   const list = plan.strokes; let drew = false;
+  // Graphite never survives outside the figure's silhouette — except the signature, which lives on the bare paper.
+  const clip = () => { inkCtx.save(); inkCtx.globalCompositeOperation = 'destination-out'; inkCtx.globalAlpha = 1; inkCtx.drawImage(plan.outside, 0, 0); inkCtx.restore(); drew = false; };
   while (cursor.stroke < list.length) {
     const s = list[cursor.stroke];
     if (t < s.tDown) break;
+    const signing = s.kind === 'sign' || s.kind === 'dot';
+    if (signing && drew) clip();
     const done = t >= s.tUp, target = done ? s.n - 1 : Math.floor(strokeProgress(s, t));
-    while (cursor.point < target) { drawSegment(s, cursor.point++); drew = true; }
+    while (cursor.point < target) { drawSegment(s, cursor.point++); if (!signing) drew = true; }
     if (!done) break;
     cursor.stroke++; cursor.point = 0;
   }
-  if (drew) { // graphite never survives outside the figure's silhouette
-    inkCtx.save(); inkCtx.globalCompositeOperation = 'destination-out'; inkCtx.globalAlpha = 1; inkCtx.drawImage(plan.outside, 0, 0); inkCtx.restore();
-  }
+  if (drew) clip();
 }
 const ease = u => .5 - .5 * Math.cos(Math.PI * clamp(u));
 function pencilAt(t) {
@@ -1105,9 +1184,10 @@ function renderFrame(t) {
 function buildAudioEvents(strokes) {
   // One audible "쓱" per gesture: quick strokes are grouped into ~150ms swishes,
   // and every swish is followed by a short silence so the sound never smears into a hiss.
-  const level = { construct:.4, contour:.9, accent:1, fill:.7, hatch:.75 };
-  const merged = []; let cur = null;
+  const level = { construct:.4, contour:.9, accent:1, fill:.7, hatch:.75, sign:.85 };
+  const merged = []; let cur = null, tap = null;
   for (const s of strokes) {
+    if (s.kind === 'dot') { tap = s; continue; } // the full stop gets its own sharp tap below
     if (cur && cur.kind === s.kind && s.tDown - cur.end < 45 && cur.end - cur.start < 150) { cur.end = s.tUp; cur.level = Math.max(cur.level, level[s.kind]); continue; }
     if (cur) merged.push(cur);
     cur = { start:s.tDown, end:s.tUp, level:level[s.kind], kind:s.kind };
@@ -1121,6 +1201,7 @@ function buildAudioEvents(strokes) {
     flip ^= 1; // alternate stroke direction: slightly brighter on the push, softer on the pull
     events.push({ start:e.start, end:Math.min(e.end, e.start + 420), level:e.level * (flip ? 1 : .8), freq:flip ? 2600 : 1900 });
   });
+  if (tap) events.push({ start:tap.tDown, end:tap.tDown + 40, level:1.6, freq:1250, tap:true });
   return events;
 }
 const volumeGain = percent => (percent / 100) * .5;
@@ -1152,6 +1233,7 @@ function scheduleStrokes(voice, events, startAt) {
   for (const e of events) {
     const a = startAt + e.start / 1000, z = startAt + e.end / 1000, attack = Math.min(.04, (z - a) * .35);
     voice.color.frequency.setValueAtTime(e.freq, a);
+    if (e.tap) { g.setValueAtTime(0, a); g.linearRampToValueAtTime(e.level, a + .003); g.setTargetAtTime(0, a + .006, .012); continue; } // "탁"
     g.setValueAtTime(0, a); g.linearRampToValueAtTime(e.level, a + attack); g.linearRampToValueAtTime(e.level * .6, z); g.setTargetAtTime(0, z, .015);
   }
 }
@@ -1207,14 +1289,14 @@ function drawFaceGuide(box) {
 }
 function rebuild() {
   if (!analysis) return;
-  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value);
+  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, signatureToggle?.checked ?? true);
   resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
   const faceAt = plan.faceEndMs ? ` 얼굴은 ${(plan.faceEndMs / 1000).toFixed(1)}초에 완성됩니다.` : '';
   const hands = analysis.marks?.hands?.length ?? 0, detailNote = analysis.marks?.mesh ? ` 이목구비${hands ? `와 손 ${hands}개` : ''}를 세밀하게 그립니다.` : '';
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy;
   strength.disabled = busy || styleSelect.value !== 'shade'; // shadow amount only matters when shading is drawn
 }
 let loadToken = 0;
@@ -1253,6 +1335,7 @@ canvas.addEventListener('pointerup', event => {
 seconds.addEventListener('input', () => { document.querySelector('#secondsLabel').textContent = `${seconds.value}초`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 strength.addEventListener('input', () => { document.querySelector('#strengthLabel').textContent = `${strength.value}%`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 styleSelect.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; setBusy(false); rebuild(); });
+signatureToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 darkness.addEventListener('input', () => {
   document.querySelector('#darknessLabel').textContent = `${darkness.value}%`; inkDarkness = Number(darkness.value) / 100;
   if (!plan) return; // no re-analysis needed: just redraw the finished sketch with the new pressure
