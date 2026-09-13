@@ -13,7 +13,12 @@ const preview = document.querySelector('#preview');
 const exportButton = document.querySelector('#export');
 const status = document.querySelector('#status');
 const fileName = document.querySelector('#fileName');
-const W = canvas.width, H = canvas.height, PAD = 52;
+// The drawing sheet (all analysis and strokes live in these coordinates) and the video frame it sits in:
+// a warm wooden studio with the sheet as a canvas board on an easel.
+const W = 720, H = 960, PAD = 52;
+const VIEW_W = canvas.width, VIEW_H = canvas.height;
+// The canvas board nearly fills the frame's width; the easel's clamp and mast show above, the tray and legs below.
+const BOARD = (() => { const w = 980, h = w * H / W; return { x:(VIEW_W - w) / 2, y:Math.round((VIEW_H - h) * .42), w, h, s:w / W }; })();
 // Timeline budget in "pixel-equivalents" per second: how much pencil travel fits in one second of video.
 const SPEED = 4600;
 // Shading is quick back-and-forth hand work, so it moves faster and costs less overhead than a considered contour.
@@ -136,17 +141,104 @@ const tooth = (() => { // paper tooth: graphite catches the peaks and skips the 
 const paperCanvas = (() => {
   const layer = document.createElement('canvas'); layer.width = W; layer.height = H;
   const c = layer.getContext('2d');
-  c.fillStyle = '#ded4c5'; c.fillRect(0, 0, W, H);
-  const wash = c.createLinearGradient(0, 0, W, H); wash.addColorStop(0, '#f7f3e9'); wash.addColorStop(.55, '#fcfbf7'); wash.addColorStop(1, '#eee7d9');
-  c.fillStyle = wash; c.fillRect(25, 25, W - 50, H - 50);
+  // Canvas-board paper: warm white, lit a little brighter from the studio window at the upper left.
+  const wash = c.createLinearGradient(0, 0, W, H); wash.addColorStop(0, '#fbf8f1'); wash.addColorStop(.55, '#f6f1e6'); wash.addColorStop(1, '#e9e0cf');
+  c.fillStyle = wash; c.fillRect(0, 0, W, H);
   const img = c.getImageData(0, 0, W, H), d = img.data;
-  for (let y = 25; y < H - 25; y++) for (let x = 25; x < W - 25; x++) {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const shade = (tooth.field[(y % tooth.size) * tooth.size + x % tooth.size] - .5) * 9, p = (y * W + x) * 4;
     d[p] += shade; d[p + 1] += shade; d[p + 2] += shade;
   }
   c.putImageData(img, 0, 0);
   return layer;
 })();
+// ───────────────────────── studio scene: wooden wall and floor, easel, canvas board ─────────────────────────
+function woodPiece(g, x, y, w, h, seed, tone = 0) {
+  // A pine board along its long axis: base colour, soft rounding light, and wavy grain lines.
+  const rand = random(seed), vertical = h > w, len = vertical ? h : w, across = vertical ? w : h;
+  g.save(); g.translate(x, y);
+  if (!vertical) { g.translate(0, h); g.rotate(-Math.PI / 2); }
+  const base = g.createLinearGradient(0, 0, across, 0);
+  const light = `hsl(34, 52%, ${80 - tone}%)`, mid = `hsl(33, 50%, ${73 - tone}%)`, dark = `hsl(30, 42%, ${60 - tone}%)`;
+  base.addColorStop(0, dark); base.addColorStop(.18, mid); base.addColorStop(.45, light); base.addColorStop(.8, mid); base.addColorStop(1, dark);
+  g.fillStyle = base; g.fillRect(0, 0, across, len);
+  g.beginPath(); g.rect(0, 0, across, len); g.clip();
+  for (let k = 0; k < across * .55; k++) {
+    const u = rand() * across, amp = .6 + rand() * 1.8, freq = 60 + rand() * 160, phase = rand() * 7;
+    g.strokeStyle = `hsla(28, 40%, ${48 - tone}%, ${.05 + rand() * .12})`; g.lineWidth = .6 + rand() * 1.1;
+    g.beginPath();
+    for (let v = -4; v <= len + 4; v += 6) { const off = Math.sin(v / freq + phase) * amp; v === -4 ? g.moveTo(u + off, v) : g.lineTo(u + off, v); }
+    g.stroke();
+  }
+  for (let k = 0; k < Math.floor(len / 700); k++) { // an occasional knot
+    const kx = across * (.3 + rand() * .4), ky = len * rand(), r = across * (.12 + rand() * .08);
+    const knot = g.createRadialGradient(kx, ky, 0, kx, ky, r * 1.8); knot.addColorStop(0, `hsla(26,45%,${40 - tone}%,.35)`); knot.addColorStop(1, 'hsla(26,45%,40%,0)');
+    g.fillStyle = knot; g.beginPath(); g.ellipse(kx, ky, r, r * 1.8, 0, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+function leg(g, top, bottom, width, seed, tone) {
+  // A leg from `top` to `bottom` (centre points), drawn as a rotated board.
+  const dx = bottom.x - top.x, dy = bottom.y - top.y, len = Math.hypot(dx, dy);
+  g.save(); g.translate(top.x, top.y); g.rotate(Math.atan2(dy, dx) - Math.PI / 2);
+  woodPiece(g, -width / 2, 0, width, len, seed, tone);
+  g.restore();
+}
+const sceneCanvas = (() => {
+  const layer = document.createElement('canvas'); layer.width = VIEW_W; layer.height = VIEW_H;
+  const g = layer.getContext('2d'), rand = random(21), floorY = Math.round(Math.min(VIEW_H * .92, BOARD.y + BOARD.h + 120));
+  // Wall: warm vertical wood panelling.
+  const wall = g.createLinearGradient(0, 0, 0, floorY); wall.addColorStop(0, '#c9a57c'); wall.addColorStop(1, '#b38b62');
+  g.fillStyle = wall; g.fillRect(0, 0, VIEW_W, floorY);
+  const panel = 135;
+  for (let x = -20, k = 0; x < VIEW_W; x += panel, k++) {
+    g.globalAlpha = .55; woodPiece(g, x, 0, panel, floorY, 100 + k, 14 + rand() * 6); g.globalAlpha = 1;
+    g.fillStyle = 'rgba(70,45,25,.35)'; g.fillRect(x - 1.5, 0, 3, floorY); // seam
+  }
+  // Floor: darker planks in gentle perspective, with a skirting board.
+  const floor = g.createLinearGradient(0, floorY, 0, VIEW_H); floor.addColorStop(0, '#8a6445'); floor.addColorStop(1, '#6d4c33');
+  g.fillStyle = floor; g.fillRect(0, floorY, VIEW_W, VIEW_H - floorY);
+  g.strokeStyle = 'rgba(45,28,16,.35)'; g.lineWidth = 2;
+  for (let k = -8; k <= 8; k++) { g.beginPath(); g.moveTo(VIEW_W / 2 + k * 70, floorY); g.lineTo(VIEW_W / 2 + k * 190, VIEW_H); g.stroke(); }
+  for (const f of [.14, .34, .6, .92]) { const yy = floorY + (VIEW_H - floorY) * f; g.strokeStyle = 'rgba(45,28,16,.18)'; g.beginPath(); g.moveTo(0, yy); g.lineTo(VIEW_W, yy); g.stroke(); }
+  woodPiece(g, 0, floorY - 34, VIEW_W, 38, 7, 22);
+  g.fillStyle = 'rgba(40,24,12,.35)'; g.fillRect(0, floorY, VIEW_W, 5);
+  // Window light falling across the wall from the upper left.
+  g.save(); g.globalCompositeOperation = 'soft-light';
+  const beam = g.createLinearGradient(0, 0, VIEW_W * .9, VIEW_H * .7); beam.addColorStop(0, 'rgba(255,236,200,.85)'); beam.addColorStop(.55, 'rgba(255,230,190,.25)'); beam.addColorStop(1, 'rgba(0,0,0,.2)');
+  g.fillStyle = beam; g.fillRect(0, 0, VIEW_W, VIEW_H); g.restore();
+
+  const B = BOARD, cx = VIEW_W / 2, trayY = B.y + B.h + 6, trayH = 46;
+  const easelShape = (off, spread) => { // a silhouette for the cast shadow
+    g.fillRect(cx - 30 + off.x, -10 + off.y, 60, trayY + off.y + 10);
+    g.fillRect(B.x + off.x - 8, B.y + off.y, B.w + 16, B.h);
+    g.fillRect(B.x - 70 + off.x, trayY + off.y, B.w + 140, trayH);
+    for (const [x0, x1] of [[cx - 300, cx - 380 - spread], [cx + 300, cx + 380 + spread], [cx, cx]]) {
+      g.beginPath(); g.moveTo(x0 - 26 + off.x, trayY + off.y); g.lineTo(x0 + 26 + off.x, trayY + off.y); g.lineTo(x1 + 26 + off.x, VIEW_H); g.lineTo(x1 - 26 + off.x, VIEW_H); g.closePath(); g.fill();
+    }
+  };
+  g.save(); g.filter = 'blur(22px)'; g.fillStyle = 'rgba(40,22,10,.32)'; easelShape({ x:48, y:26 }, 40); g.restore();
+  // Easel, back to front: mast and back leg, front legs, board shadow, board, top clamp, tray.
+  woodPiece(g, cx - 30, -10, 60, trayY + 60, 31, 0);
+  leg(g, { x:cx, y:trayY + trayH - 4 }, { x:cx + 6, y:VIEW_H + 20 }, 50, 32, 8);
+  leg(g, { x:cx - 300, y:trayY + 10 }, { x:cx - 380, y:VIEW_H + 60 }, 58, 33, 2);
+  leg(g, { x:cx + 300, y:trayY + 10 }, { x:cx + 380, y:VIEW_H + 60 }, 58, 34, 2);
+  g.save(); g.filter = 'blur(10px)'; g.fillStyle = 'rgba(30,18,8,.35)'; g.fillRect(B.x + 14, B.y + 16, B.w, B.h); g.restore();
+  g.fillStyle = '#d9d0bf'; g.fillRect(B.x + B.w, B.y + 6, 9, B.h); g.fillRect(B.x + 6, B.y + B.h, B.w + 3, 7); // board thickness
+  const clampW = 230;
+  g.save(); g.filter = 'blur(6px)'; g.fillStyle = 'rgba(30,18,8,.35)'; g.fillRect(cx - clampW / 2 + 8, B.y - 26 + 10, clampW, 46); g.restore();
+  woodPiece(g, cx - clampW / 2, B.y - 26, clampW, 44, 35, -2);
+  g.save(); g.filter = 'blur(8px)'; g.fillStyle = 'rgba(30,18,8,.4)'; g.fillRect(B.x - 60, trayY + 16, B.w + 130, trayH); g.restore();
+  woodPiece(g, B.x - 70, trayY, B.w + 140, 16, 36, -6);          // tray top face, catching the light
+  woodPiece(g, B.x - 70, trayY + 16, B.w + 140, trayH - 16, 37, 6); // tray front face
+  g.fillStyle = 'rgba(60,36,18,.25)'; g.fillRect(B.x - 70, trayY + 15, B.w + 140, 2);
+  // Soft vignette to keep the eye on the canvas.
+  const vig = g.createRadialGradient(cx, B.y + B.h * .45, B.h * .45, cx, B.y + B.h * .45, VIEW_H * .8);
+  vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(25,14,6,.45)');
+  g.fillStyle = vig; g.fillRect(0, 0, VIEW_W, VIEW_H);
+  return layer;
+})();
+const onSheet = fn => { ctx.save(); ctx.translate(BOARD.x, BOARD.y); ctx.scale(BOARD.s, BOARD.s); fn(); ctx.restore(); };
 let GRAPHITE_MEAN = 0;
 const graphite = (() => {
   const tile = document.createElement('canvas'); tile.width = tile.height = tooth.size;
@@ -1286,16 +1378,10 @@ function orderHatching(list, from) {
   }
   return out;
 }
-function placeSignature(strokes) {
-  // Signed in the top-left corner like an artist's mark; if the drawing crowds that corner, the top-right instead.
+function placeSignature() {
+  // Always signed in the top-left corner of the canvas, like an artist's mark.
   const width = W * .28, height = width / SIGNATURE.aspect, margin = 24;
-  const corners = [{ x:PAD + margin, y:PAD + margin + 6 }, { x:W - PAD - margin - width, y:PAD + margin + 6 }];
-  const crowding = c => {
-    let hits = 0;
-    for (const s of strokes) for (let i = 0; i < s.n; i += 3) if (s.x[i] > c.x - 12 && s.x[i] < c.x + width + 12 && s.y[i] > c.y - 12 && s.y[i] < c.y + height + 16) hits++;
-    return hits;
-  };
-  const scores = corners.map(crowding), corner = scores[0] <= 4 || scores[0] <= scores[1] ? corners[0] : corners[1];
+  const corner = { x:PAD + margin, y:PAD + margin + 6 };
   const to = (x, y) => ({ x:corner.x + x * height, y:corner.y + y * height });
   return { paths:SIGNATURE.paths.map(flat => { const pts = []; for (let k = 0; k < flat.length; k += 2) pts.push(to(flat[k], flat[k + 1])); return pts; }), dot:to(...SIGNATURE.dot), height };
 }
@@ -1303,7 +1389,7 @@ const SIGN_MS = 3000; // travel + name + pause + tap + a moment before the penci
 const signPace = totalMs => clamp(totalMs / 12000, .55, 1); // short videos sign a little faster
 function signatureStrokes(strokes, startMs, rand, pace) {
   // The name is written in one quick, continuous gesture, then a short pause, a lift — and the full stop: "탁".
-  const { paths, dot, height } = placeSignature(strokes), out = [];
+  const { paths, dot, height } = placeSignature(), out = [];
   for (const raw of paths) {
     const s = finalizeStroke({ raw, kind:'sign', fine:true, face:0, strength:1 }, rand, 0, 0);
     if (s) out.push(Object.assign(s, { width:1.5, alpha:.95, ghost:.25 }));
@@ -1413,7 +1499,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const strokes = phases.flat().map(styleStroke);
 
   // Timeline in raw units, then scaled so the last stroke ends exactly before the outro.
-  const entry = { x:W + 40, y:H * .78 }; let t = 0, px = entry.x, py = entry.y;
+  const entry = { x:W + 320, y:H * .95 }; let t = 0, px = entry.x, py = entry.y; // the hand comes in from off the easel, lower right
   for (const s of strokes) {
     const d = Math.hypot(s.x[0] - px, s.y[0] - py);
     s.tLift = t; t += s.chain ? 8 + d * .1 : KIND[s.kind].lift + d * .09;
@@ -1425,7 +1511,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const drawEndMs = leadMs + drawMs, faceEndMs = faceEndIndex && strokes[faceEndIndex - 1] ? strokes[faceEndIndex - 1].tUp : 0;
   if (signature) strokes.push(...signatureStrokes(strokes, drawEndMs, random(4321), signPace(totalMs)));
 
-  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 60, y:H * .9 }, faceEndMs, outside:A.outside, ai:!!ai, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
+  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, ai:!!ai, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
 }
 
 // ───────────────────────── rendering ─────────────────────────
@@ -1504,7 +1590,14 @@ function drawPencil(pen) {
   ctx.restore();
 }
 function renderFrame(t) {
-  ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.drawImage(paperCanvas, 0, 0);
+  ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sceneCanvas, 0, 0);
+  onSheet(() => { ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawSheet(t); });
+  if (!plan) return;
+  const pen = pencilAt(t); if (pen) onSheet(() => drawPencil(pen));
+}
+function drawSheet(t) {
+  ctx.drawImage(paperCanvas, 0, 0);
   if (!plan) return;
   advanceInk(t);
   if (plan.aiLayer) {
@@ -1517,7 +1610,6 @@ function renderFrame(t) {
     ctx.drawImage(aiFrame, 0, 0);
   }
   ctx.drawImage(ink, 0, 0);
-  const pen = pencilAt(t); if (pen) drawPencil(pen);
 }
 
 // ───────────────────────── pencil sound ─────────────────────────
@@ -1624,8 +1716,10 @@ const FACE_NOTE = {
 function drawFaceGuide(box) {
   // Only on the still preview — never recorded into the video.
   const { b, face } = analysis, g = box ?? { x:b.x + face.x, y:b.y + face.y, rx:face.rx, ry:face.ry };
-  ctx.save(); ctx.setLineDash([9, 7]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(214,120,40,.9)';
-  ctx.beginPath(); ctx.ellipse(g.x, g.y, g.rx, g.ry, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  onSheet(() => {
+    ctx.setLineDash([9, 7]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(214,120,40,.9)';
+    ctx.beginPath(); ctx.ellipse(g.x, g.y, g.rx, g.ry, 0, 0, Math.PI * 2); ctx.stroke();
+  });
 }
 function rebuild() {
   if (!analysis) return;
@@ -1661,7 +1755,10 @@ photoInput.addEventListener('change', event => {
 });
 // Face correction: click moves the face centre, dragging draws a new face region.
 let drag = null;
-const canvasPoint = event => { const r = canvas.getBoundingClientRect(); return { x:(event.clientX - r.left) * W / r.width, y:(event.clientY - r.top) * H / r.height }; };
+const canvasPoint = event => { // screen → video frame → sheet coordinates
+  const r = canvas.getBoundingClientRect(), vx = (event.clientX - r.left) * VIEW_W / r.width, vy = (event.clientY - r.top) * VIEW_H / r.height;
+  return { x:(vx - BOARD.x) / BOARD.s, y:(vy - BOARD.y) / BOARD.s };
+};
 const dragBox = (a, z) => ({ x:(a.x + z.x) / 2, y:(a.y + z.y) / 2, rx:Math.abs(z.x - a.x) / 2, ry:Math.abs(z.y - a.y) / 2 });
 canvas.addEventListener('pointerdown', event => {
   if (!plan || session || exportButton.disabled) return;
@@ -1725,7 +1822,7 @@ exportButton.addEventListener('click', async () => {
   const withAudio = soundToggle.checked && sound.ensure(), wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
   const tracks = [...canvas.captureStream(30).getVideoTracks(), ...(withAudio ? sound.stream.stream.getAudioTracks() : [])];
   const mimeType = supportedType(wanted, withAudio) || supportedType(other, withAudio);
-  const recorder = new MediaRecorder(new MediaStream(tracks), mimeType ? { mimeType } : {});
+  const recorder = new MediaRecorder(new MediaStream(tracks), { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond:10_000_000 }); // 1080×1920 needs a generous bitrate for crisp graphite
   const actual = (recorder.mimeType || mimeType || '').includes('mp4') ? 'mp4' : 'webm';
   const parts = []; recorder.ondataavailable = event => event.data.size && parts.push(event.data);
   recorder.onstop = () => {
