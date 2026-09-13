@@ -961,13 +961,62 @@ function makeShading(A, density, rand) {
       // soft facial shadows (under the nose, lower lip, jaw) get a lower bar so the face gains some modelling.
       const onLine = fw > .5 ? k % 2 === 0 : k % 3 === 0;
       const clean = eyeW[i] < .4 && !(zone[i] & (Z.BROW | Z.EYE | Z.IRIS | Z.LIPS)) && line[i] < .55 && !isHair(A, i);
-      if (onLine && clean && shade[i] > thr * (fw > .5 ? .75 : 1) + (hash(x >> 3, y >> 3, 9) - .5) * .08) {
+      // The nose is read almost entirely from its shadows (bridge side, wings, underside), so its bar is lowest.
+      const bar = zone[i] & (Z.NOSE | Z.BRIDGE) ? .5 : fw > .5 ? .75 : 1;
+      if (onLine && clean && shade[i] > thr * bar + (hash(x >> 3, y >> 3, 9) - .5) * .08) {
         if (!run) run = { s0:s, shade:0, face:0, hand:0, head:0, n:0 };
         run.s1 = s; run.shade += shade[i]; run.face += fw; run.hand += handW[i]; run.head += head[i]; run.n++;
       } else emit();
     }
     emit();
   }
+  return out;
+}
+function hatchPolygon(A, poly, angle, spacing, alpha, width, rand) {
+  // Parallel hatching clipped to a polygon (analysis-grid coordinates): the artist's way of shading one plane.
+  const out = [], dx = Math.cos(angle), dy = Math.sin(angle), nx = -dy, ny = dx;
+  const offs = poly.map(p => p.x * nx + p.y * ny), alongs = poly.map(p => p.x * dx + p.y * dy);
+  const minA = Math.min(...alongs) - 2, maxA = Math.max(...alongs) + 2;
+  for (let o = Math.min(...offs) + spacing * .5; o < Math.max(...offs); o += spacing * (.85 + rand() * .3)) {
+    let start = null, last = null;
+    const emit = () => {
+      if (start === null || last - start < 3) { start = null; return; }
+      const j = () => (rand() - .5) * .8, at = s => ({ x:dx * s + nx * (o + j() * .3), y:dy * s + ny * (o + j() * .3) });
+      const p0 = at(start + j()), p2 = at(last + j()), p1 = { x:(p0.x + p2.x) / 2 + nx * (rand() - .5) * .8, y:(p0.y + p2.y) / 2 + ny * (rand() - .5) * .8 };
+      out.push({ raw:[p0, p1, p2], len:Math.hypot(p2.x - p0.x, p2.y - p0.y), kind:'hatch', face:1, hand:0, head:true, shade:2, layer:0, offset:o,
+        alpha0:alpha * (.85 + rand() * .3), width0:width });
+      start = null;
+    };
+    for (let s = minA; s <= maxA; s += 1) {
+      if (insidePolygon(poly, dx * s + nx * o, dy * s + ny * o)) { start ??= s; last = s; } else emit();
+    }
+    emit();
+  }
+  return out;
+}
+function makeNoseShading(A, density, rand) {
+  // A line model barely draws a nose: it is read from its planes. Using the face mesh, shade the two side planes
+  // of the nose (the darker side firmer, as the photo shows) and the small shadow under its tip.
+  const mesh = A.marks?.mesh; if (!mesh) return [];
+  const { gw, gh, soft } = A, P = ids => ids.map(i => mesh[i]);
+  const left = P([122, 196, 3, 51, 45, 220, 115, 131, 198, 236, 174, 188]), right = P([351, 419, 248, 281, 275, 440, 344, 360, 420, 456, 399, 412]);
+  const under = P([98, 2, 327, 164]);
+  const meanLum = poly => {
+    const xs = poly.map(p => p.x), ys = poly.map(p => p.y); let sum = 0, count = 0;
+    for (let y = Math.max(0, Math.floor(Math.min(...ys))); y <= Math.min(gh - 1, Math.ceil(Math.max(...ys))); y++)
+      for (let x = Math.max(0, Math.floor(Math.min(...xs))); x <= Math.min(gw - 1, Math.ceil(Math.max(...xs))); x++)
+        if (insidePolygon(poly, x, y)) { sum += soft[y * gw + x]; count++; }
+    return count ? sum / count : 255;
+  };
+  const noseLen = Math.hypot(mesh[4].x - mesh[6].x, mesh[4].y - mesh[6].y); if (noseLen < 12) return [];
+  const bridge = Math.atan2(mesh[4].y - mesh[6].y, mesh[4].x - mesh[6].x), spacing = clamp(noseLen / 18, 1.8, 3.2), gain = .4 + density * .9;
+  const lL = meanLum(left), lR = meanLum(right), diff = lL - lR, strong = .42 * gain, soft1 = .22 * gain;
+  // Strokes run down the nose and lean outward on each side, following the plane.
+  const out = [
+    ...hatchPolygon(A, left, bridge + .45, spacing, diff < -6 ? strong : diff > 6 ? soft1 * .7 : soft1 * 1.2, .95, rand),
+    ...hatchPolygon(A, right, bridge - .45, spacing, diff > 6 ? strong : diff < -6 ? soft1 * .7 : soft1 * 1.2, .95, rand),
+    ...hatchPolygon(A, under, bridge + Math.PI / 2 + .3, spacing * .9, soft1 * 1.4, .95, rand),
+  ];
   return out;
 }
 const isHair = (A, i) => A.hair[i] > .5 && A.eyeW[i] < .2;
@@ -1290,14 +1339,27 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const ai = style === 'ai' && A.ai; // AI line art replaces the traced contours; otherwise the classic engine
   const sourceContours = ai ? A.ai.contours : A.contours;
   const contours = prep(sourceContours, 'contour'), fills = ai ? [] : prep(A.fills);
-  if (ai) { // the AI drawing is meant to be drawn whole: hurry the hand (up to 2.2×) rather than leave lines out
-    const needed = contours.reduce((a, s) => a + cost(s), 0) / .93;
-    capacity = Math.max(capacity, Math.min(needed, capacity * 2.2));
-  }
+  // Hatching (parallel shadow strokes) in the shaded style, and on top of the AI line art, where it restores what a
+  // line model can't draw: the nose, cheek and jaw shadows. The AI already draws hair, so no extra strands there.
+  const shaded = style === 'shade' || !!ai;
+  const hatchSource = !shaded || density <= 0 ? [] : ai ? [...makeNoseShading(A, density, rand), ...makeShading(A, density, rand)]
+    : [...makeNoseShading(A, density, rand), ...makeShading(A, density, rand), ...makeHairStrands(A, density, rand)];
+  const hatches = prep(hatchSource).sort((a, z) => z.shade - a.shade);
   const priority = s => s.strength * (.45 + Math.min(1.4, s.len / 70));
   const group = s => s.hand > .5 ? 'hand' : s.face > .5 || s.head ? 'head' : 'body';
   const pool = (list, name) => list.filter(s => group(s) === name).sort((a, z) => priority(z) - priority(a));
   const headContours = pool(contours, 'head'), handContours = pool(contours, 'hand'), bodyContours = pool(contours, 'body');
+  const sumCost = list => list.reduce((a, s) => a + cost(s), 0);
+  let aiShare = null;
+  if (ai) {
+    // The AI drawing is meant to be drawn whole: hurry the hand (up to 3×) rather than leave lines out,
+    // and give every group exactly its own share, so nothing is starved.
+    const parts = { head:sumCost(headContours), hand:sumCost(handContours), body:sumCost(bodyContours),
+      headH:sumCost(hatches.filter(s => group(s) === 'head')), handH:sumCost(hatches.filter(s => group(s) === 'hand')), bodyH:sumCost(hatches.filter(s => group(s) === 'body')) };
+    const total = Object.values(parts).reduce((a, v) => a + v, 0) / .93 || 1;
+    capacity = Math.max(capacity, Math.min(total, capacity * 3));
+    aiShare = Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, v / total * .999]));
+  }
 
   let carry = 0; const stats = {};
   const take = (pool, share, name) => {
@@ -1320,9 +1382,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
     construct.push(c); constructUsed += cost(c);
   }
   // Shares of the time budget. Lines always come first; shading only gets what the "선 + 그림자" style allows.
-  const shaded = style === 'shade';
-  const hatches = shaded ? prep([...makeShading(A, density, rand), ...makeHairStrands(A, density, rand)]).sort((a, z) => z.shade - a.shade) : [];
-  const headC = take(headContours, shaded ? .28 : ai ? .46 : .40, 'headContour');
+  const headC = take(headContours, ai ? aiShare.head : shaded ? .28 : .40, 'headContour');
   const headF = take(fills, ai ? 0 : .08, 'fill');
   const accents = [];
   let accentBudget = capacity * (ai ? 0 : .03) + carry; // the AI drawing already weights its own lines; no doubled accents
@@ -1331,11 +1391,11 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
     if (cost(c) <= accentBudget) { accents.push(c); accentBudget -= cost(c); }
   }
   carry = accentBudget;
-  const headH = take(hatches.filter(s => group(s) === 'head'), .10, 'headHatch');
-  const handC = take(handContours, shaded ? .10 : ai ? .12 : .15, 'handContour');
-  const handH = take(hatches.filter(s => group(s) === 'hand'), .03, 'handHatch');
-  const bodyC = take(bodyContours, shaded ? .20 : ai ? .36 : .30, 'bodyContour');
-  const bodyH = take(hatches.filter(s => group(s) === 'body'), .14, 'bodyHatch');
+  const headH = take(hatches.filter(s => group(s) === 'head'), ai ? aiShare.headH : .10, 'headHatch');
+  const handC = take(handContours, ai ? aiShare.hand : shaded ? .10 : .15, 'handContour');
+  const handH = take(hatches.filter(s => group(s) === 'hand'), ai ? aiShare.handH : .03, 'handHatch');
+  const bodyC = take(bodyContours, ai ? aiShare.body : shaded ? .20 : .30, 'bodyContour');
+  const bodyH = take(hatches.filter(s => group(s) === 'body'), ai ? aiShare.bodyH : .14, 'bodyHatch');
 
   const faceCenter = { x:b.x + face.x, y:b.y + face.y - face.ry * .4 };
   const phases = []; let at = faceCenter;
@@ -1578,7 +1638,7 @@ function rebuild() {
 }
 function setBusy(busy) {
   preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy;
-  strength.disabled = busy || styleSelect.value !== 'shade'; // shadow amount only matters when shading is drawn
+  strength.disabled = busy || styleSelect.value === 'line'; // shadow amount only matters when shading is drawn
 }
 let loadToken = 0;
 photoInput.addEventListener('change', event => {
