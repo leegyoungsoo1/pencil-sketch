@@ -162,6 +162,12 @@ const graphite = (() => {
 const ink = document.createElement('canvas'); ink.width = W; ink.height = H;
 const inkCtx = ink.getContext('2d');
 inkCtx.strokeStyle = inkCtx.createPattern(graphite, 'repeat'); inkCtx.lineCap = 'butt';
+// AI style: the pencil's path is painted into a reveal mask; the AI graphite layer shows through wherever it has passed.
+const reveal = document.createElement('canvas'); reveal.width = W; reveal.height = H;
+const revealCtx = reveal.getContext('2d');
+revealCtx.strokeStyle = '#fff'; revealCtx.lineCap = 'round'; revealCtx.lineJoin = 'round';
+const aiFrame = document.createElement('canvas'); aiFrame.width = W; aiFrame.height = H;
+const aiFrameCtx = aiFrame.getContext('2d');
 
 // ───────────────────────── photo analysis ─────────────────────────
 function findFace(rgba, w, h) {
@@ -204,7 +210,7 @@ function prepare(img, crop = null) { // face-independent work, done once per pho
     lum[i] = rgba[i * 4] * .299 + rgba[i * 4 + 1] * .587 + rgba[i * 4 + 2] * .114;
     value[i] = Math.max(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]); // red lips and flushed cheeks stay light; real shadows don't
   }
-  return { b, gw, gh, n, work, rgba, soft:blur(lum, gw, gh, 2), softValue:blur(value, gw, gh, 2), crop:src, b1:blur(lum, gw, gh, 1), b2:blur(lum, gw, gh, 2), b4:blur(lum, gw, gh, 4) };
+  return { b, gw, gh, n, work, rgba, image:img, soft:blur(lum, gw, gh, 2), softValue:blur(value, gw, gh, 2), crop:src, b1:blur(lum, gw, gh, 1), b2:blur(lum, gw, gh, 2), b4:blur(lum, gw, gh, 4) };
 }
 function chooseCrop(img, base, face, hands = []) {
   // Frame the portrait: the face takes about a third of the drawing's height, hair and shoulders fill the rest —
@@ -244,7 +250,7 @@ async function analyzePhoto(img) {
     face = refound.source === 'ai' ? refound : { ...face, ...toCrop(face), rx:face.rx * s0 * k, ry:face.ry * s0 * k, eyes:face.eyes?.map(toCrop) ?? null };
     base = zoomed;
   }
-  [base.person, base.marks] = await Promise.all([segmentPerson(base), detectLandmarks(base)]);
+  [base.person, base.marks, base.objects] = await Promise.all([segmentPerson(base), detectLandmarks(base), segmentObjects(base)]);
   const mesh = base.marks?.mesh;
   if (mesh && face.source === 'ai') {
     // The mesh's face oval is tighter and follows head tilt better than the detector box; irises are exact eye centres.
@@ -448,7 +454,13 @@ function analyzeFace(base, face) { // everything that depends on where the face 
   const A = { ...base, line, ang, coh, shade, silhouette, hair, faceW, handW, detail, zone, far, subject, head, eyeW, outside, face, skinHi };
   A.contours = traceContours(A);
   A.fills = [...makeFills(A), ...makeFeatureMarks(A)];
+  A.ai = base.lineMap ? traceLineArt(A) : null; // re-traced when the face is corrected, without re-running the model
   return A;
+}
+async function ensureLineArt(A) {
+  if (A.ai) return true;
+  try { A.lineMap = await makeLineMap(A); A.ai = traceLineArt(A); return true; }
+  catch (error) { console.warn('AI line art unavailable:', error); A.aiFailed = true; return false; }
 }
 // Vision models (MediaPipe, loaded once from the CDN): face detection frames the portrait, segmentation separates the person.
 const MEDIAPIPE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1';
@@ -524,6 +536,238 @@ async function segmentPerson(base) {
     console.warn('Person segmentation unavailable:', error);
     return null;
   }
+}
+// ───────────────────────── AI line art ─────────────────────────
+// "Informative Drawings" (Caroline Chan, MIT) turns a photo into an artist-style line drawing; it runs in the browser
+// through ONNX Runtime. DeepLab v3 finds people, animals and objects, so bare backgrounds (walls, text, logos) stay paper.
+const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+const LINEART_MODEL = 'https://huggingface.co/rocca/informative-drawings-line-art-onnx/resolve/main/model.onnx';
+const OBJECT_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite';
+let lineArtPromise = null, objectPromise = null;
+const REVEAL_RADIUS = 3; // how far either side of the pencil's path the AI graphite is uncovered (canvas px)
+const loadScript = src => new Promise((resolve, reject) => {
+  const tag = document.createElement('script'); tag.src = src; tag.onload = resolve; tag.onerror = () => reject(new Error(`cannot load ${src}`)); document.head.appendChild(tag);
+});
+function loadLineArt() {
+  lineArtPromise ??= (async () => {
+    if (!window.ort) await loadScript(`${ORT}ort.min.js`);
+    ort.env.wasm.wasmPaths = ORT;
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+    return ort.InferenceSession.create(LINEART_MODEL, { executionProviders:['wasm'] });
+  })().catch(error => { lineArtPromise = null; throw error; });
+  return lineArtPromise;
+}
+function loadObjectSegmenter() {
+  objectPromise ??= (async () => {
+    const { vision, files } = await loadVision();
+    return vision.ImageSegmenter.createFromOptions(files, { baseOptions:{ modelAssetPath:OBJECT_MODEL, delegate:'CPU' }, runningMode:'IMAGE', outputConfidenceMasks:false, outputCategoryMask:true });
+  })().catch(error => { objectPromise = null; throw error; });
+  return objectPromise;
+}
+async function segmentObjects(base) {
+  // Everything DeepLab labels as something other than background: people, dogs, cats, chairs, sofas, plants, bottles…
+  try {
+    const segmenter = await withTimeout(loadObjectSegmenter(), 25000), result = segmenter.segment(base.work), mask = result.categoryMask;
+    if (!mask) { result.close(); return null; }
+    const data = mask.getAsUint8Array(), mw = mask.width, mh = mask.height, out = new Float32Array(base.n);
+    for (let y = 0; y < base.gh; y++) for (let x = 0; x < base.gw; x++) out[y * base.gw + x] = data[Math.min(mh - 1, (y * mh / base.gh) | 0) * mw + Math.min(mw - 1, (x * mw / base.gw) | 0)] ? 1 : 0;
+    result.close();
+    return blur(out, base.gw, base.gh, 2);
+  } catch (error) {
+    console.warn('Object segmentation unavailable:', error);
+    return null;
+  }
+}
+async function makeLineMap(base) {
+  // AI line drawing of exactly the analysed framing, returned as graphite darkness (0..1) on the analysis grid.
+  const session = await withTimeout(loadLineArt(), 120000), img = base.image, cr = base.crop, long = 768;
+  const s = long / Math.max(cr.w, cr.h), w = Math.max(8, Math.round(cr.w * s / 8) * 8), h = Math.max(8, Math.round(cr.h * s / 8) * 8);
+  const input = document.createElement('canvas'); input.width = w; input.height = h;
+  const ictx = input.getContext('2d', { willReadFrequently:true }); ictx.drawImage(img, cr.x, cr.y, cr.w, cr.h, 0, 0, w, h);
+  const px = ictx.getImageData(0, 0, w, h).data, tensor = new Float32Array(3 * w * h);
+  for (let i = 0; i < w * h; i++) { tensor[i] = px[i * 4] / 255; tensor[w * h + i] = px[i * 4 + 1] / 255; tensor[2 * w * h + i] = px[i * 4 + 2] / 255; }
+  const output = (await session.run({ [session.inputNames[0]]:new ort.Tensor('float32', tensor, [1, 3, h, w]) }))[session.outputNames[0]];
+  const [, , oh, ow] = output.dims, drawn = document.createElement('canvas'); drawn.width = ow; drawn.height = oh;
+  const dctx = drawn.getContext('2d'), image = dctx.createImageData(ow, oh);
+  for (let i = 0; i < ow * oh; i++) { const v = 255 * clamp(output.data[i]); image.data[i * 4] = image.data[i * 4 + 1] = image.data[i * 4 + 2] = v; image.data[i * 4 + 3] = 255; }
+  dctx.putImageData(image, 0, 0);
+  const grid = document.createElement('canvas'); grid.width = base.gw; grid.height = base.gh;
+  const gctx = grid.getContext('2d', { willReadFrequently:true }); gctx.imageSmoothingQuality = 'high'; gctx.drawImage(drawn, 0, 0, base.gw, base.gh);
+  const g = gctx.getImageData(0, 0, base.gw, base.gh).data, map = new Float32Array(base.n);
+  for (let i = 0; i < base.n; i++) map[i] = 1 - g[i * 4] / 255;
+  return map;
+}
+function thinLines(on, w, h) { // Zhang–Suen thinning, in place: every line becomes a one-pixel centreline
+  let changed = true;
+  const idx = [];
+  for (let i = 0; i < on.length; i++) if (on[i]) idx.push(i);
+  let active = idx;
+  while (changed) {
+    changed = false;
+    for (const step of [0, 1]) {
+      const del = [];
+      for (const i of active) {
+        if (!on[i]) continue;
+        const x = i % w, y = (i / w) | 0; if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) { on[i] = 0; continue; }
+        const p = [on[i - w], on[i - w + 1], on[i + 1], on[i + w + 1], on[i + w], on[i + w - 1], on[i - 1], on[i - w - 1]];
+        const count = p[0] + p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7]; if (count < 2 || count > 6) continue;
+        let transitions = 0; for (let k = 0; k < 8; k++) if (!p[k] && p[(k + 1) % 8]) transitions++;
+        if (transitions !== 1) continue;
+        if (step === 0 ? (p[0] && p[2] && p[4]) || (p[2] && p[4] && p[6]) : (p[0] && p[2] && p[6]) || (p[0] && p[4] && p[6])) continue;
+        del.push(i);
+      }
+      for (const i of del) on[i] = 0;
+      if (del.length) changed = true;
+    }
+    active = active.filter(i => on[i]);
+  }
+  return on;
+}
+function traceSkeleton(sk, w) {
+  // Walk the centreline graph into polylines: branches run between ends and junctions, loops are walked last.
+  // Diagonal steps are ignored when a straight neighbour already connects the same pixels (no false junctions).
+  const D = [1, w + 1, w, w - 1, -1, -w - 1, -w, -w + 1];
+  const links = i => { const out = []; for (let k = 0; k < 8; k++) { if (!sk[i + D[k]]) continue; if (k & 1 && (sk[i + D[k - 1]] || sk[i + D[(k + 1) % 8]])) continue; out.push(k); } return out; };
+  const used = new Uint8Array(sk.length), paths = [];
+  const walk = (start, k) => {
+    const pts = [start]; let cur = start;
+    for (;;) {
+      const next = cur + D[k]; used[cur] |= 1 << k; used[next] |= 1 << ((k + 4) % 8); pts.push(next); cur = next;
+      const l = links(cur); if (l.length !== 2) break;
+      const free = l.find(q => !(used[cur] & (1 << q))); if (free === undefined) break; k = free;
+    }
+    return pts;
+  };
+  const pixels = []; for (let i = 0; i < sk.length; i++) if (sk[i]) pixels.push(i);
+  for (const pass of [0, 1]) for (const i of pixels) {
+    const l = links(i); if (pass === 0 && l.length === 2) continue;
+    for (const k of l) if (!(used[i] & (1 << k))) paths.push(walk(i, k));
+  }
+  return paths.map(p => p.map(i => ({ x:i % w, y:(i / w) | 0 })));
+}
+function joinPaths(paths, maxGap = 2.9) {
+  // Rejoin centreline pieces that continue each other through a junction or a one-pixel break.
+  const end = (p, atStart) => { const n = p.length, k = Math.min(4, n - 1), a = atStart ? p[0] : p[n - 1], b = atStart ? p[k] : p[n - 1 - k], l = Math.hypot(a.x - b.x, a.y - b.y) || 1; return { x:a.x, y:a.y, dx:(a.x - b.x) / l, dy:(a.y - b.y) / l }; };
+  for (let pass = 0; pass < 6; pass++) {
+    const buckets = new Map(), key = (x, y) => `${Math.floor(x / 4)},${Math.floor(y / 4)}`;
+    paths.forEach((p, id) => { if (!p) return; for (const s of [true, false]) { const e = end(p, s), kk = key(e.x, e.y); if (!buckets.has(kk)) buckets.set(kk, []); buckets.get(kk).push({ id, s, e }); } });
+    let merged = 0; const taken = new Set();
+    paths.forEach((p, id) => {
+      if (!p || taken.has(id)) return;
+      for (const s of [false, true]) {
+        const e = end(p, s); let best = null, bestScore = .3;
+        for (let bx = -1; bx <= 1; bx++) for (let by = -1; by <= 1; by++) for (const c of buckets.get(`${Math.floor(e.x / 4) + bx},${Math.floor(e.y / 4) + by}`) ?? []) {
+          if (c.id === id || taken.has(c.id) || !paths[c.id]) continue;
+          const gap = Math.hypot(c.e.x - e.x, c.e.y - e.y); if (gap > maxGap) continue;
+          const score = (e.dx * -c.e.dx + e.dy * -c.e.dy) - gap * .08; // leaving one way, arriving from the opposite side
+          if (score > bestScore) { bestScore = score; best = c; }
+        }
+        if (!best) continue;
+        const other = paths[best.id], a = s ? p.slice().reverse() : p, b = best.s ? other : other.slice().reverse();
+        paths[id] = a.concat(b); paths[best.id] = null; taken.add(id); taken.add(best.id); merged++; return;
+      }
+    });
+    paths = paths.filter(Boolean);
+    if (!merged) break;
+  }
+  return paths;
+}
+function traceLineArt(A) {
+  const { gw, gh, n, b, lineMap, person, objects, faceW, handW, detail, zone, eyeW, head } = A;
+  // What to draw: people, animals and objects. Bare backgrounds stay paper.
+  const keepRaw = new Float32Array(n);
+  for (let i = 0; i < n; i++) keepRaw[i] = person || objects ? Math.max(person?.[i] ?? 0, objects?.[i] ?? 0, faceW[i], clamp(handW[i] * 1.5)) : 1;
+  const keep = blur(keepRaw, gw, gh, 4);
+  // The model draws most lines mid-grey, so thresholds are relative to its own darkest lines in this photo.
+  const inkSample = []; for (let i = 0; i < n; i += 2) if (keep[i] > .3 && lineMap[i] > .05) inkSample.push(lineMap[i]);
+  inkSample.sort((a, z) => a - z);
+  const top = Math.max(.25, inkSample[Math.floor(inkSample.length * .995)] ?? .6), ink = new Float32Array(n);
+  for (let i = 0; i < n; i++) ink[i] = clamp(lineMap[i] / top);
+  A.ink = ink;
+  // Busy textures (sequins, knit, prints) away from the head and hands: lines crowd together there, so only firm
+  // ones count. Hair is exempt — its crowded strands are exactly what a portrait needs.
+  const busyRaw = new Float32Array(n); for (let i = 0; i < n; i++) busyRaw[i] = ink[i] > .35 ? 1 : 0;
+  const busyD = blur(busyRaw, gw, gh, 5), texture = i => !head[i] && detail[i] < .3 && busyD[i] > .24;
+  // Line mask with hysteresis: firm strokes seed it, fainter pixels that touch them extend it.
+  const on = new Uint8Array(n), stack = [];
+  for (let i = 0; i < n; i++) if (keep[i] > .3 && ink[i] > (texture(i) ? .8 : .28)) { on[i] = 1; stack.push(i); }
+  while (stack.length) {
+    const i = stack.pop(), x = i % gw;
+    for (const d of [-gw - 1, -gw, -gw + 1, -1, 1, gw - 1, gw, gw + 1]) {
+      const j = i + d; if (j < 0 || j >= n || on[j] || Math.abs((j % gw) - x) > 1 || keep[j] <= .3 || ink[j] <= (texture(j) ? .5 : .12)) continue;
+      on[j] = 1; stack.push(j);
+    }
+  }
+  // Busy textures (sparkles, knit, prints) turn into crowds of tiny marks: there, only sizeable pieces survive.
+  const onF = new Float32Array(n); for (let i = 0; i < n; i++) onF[i] = on[i];
+  const density = blur(onF, gw, gh, 6), label = new Int32Array(n); let id = 0;
+  for (let i = 0; i < n; i++) if (texture(i)) density[i] = Math.max(density[i], .3); // pieces inside a texture must be substantial
+  for (let start = 0; start < n; start++) {
+    if (!on[start] || label[start]) continue;
+    id++; const pix = [start]; label[start] = id; let x0 = gw, x1 = 0, y0 = gh, y1 = 0, dens = 0, fine = 0;
+    for (let h = 0; h < pix.length; h++) {
+      const i = pix[h], x = i % gw, y = (i / gw) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); dens += density[i]; fine += detail[i];
+      for (const d of [-gw - 1, -gw, -gw + 1, -1, 1, gw - 1, gw, gw + 1]) { const j = i + d; if (j >= 0 && j < n && on[j] && !label[j] && Math.abs((j % gw) - x) <= 1) { label[j] = id; pix.push(j); } }
+    }
+    const span = Math.hypot(x1 - x0, y1 - y0), minSpan = fine / pix.length > .5 ? 3 : dens / pix.length > .22 ? 30 : 7;
+    if (span < minSpan) for (const i of pix) on[i] = 0;
+  }
+  thinLines(on, gw, gh);
+  const paths = joinPaths(traceSkeleton(on, gw));
+  const contours = [];
+  for (const raw of paths) {
+    const pts = chaikin(simplify(raw, .7)), m = raw.length;
+    let len = 0; for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+    const mid = raw[m >> 1], fineMid = detail[mid.y * gw + mid.x] > .5;
+    if (len < (fineMid ? 4 : 9)) continue;
+    const zones = new Float32Array(8); let dark = 0, faceSum = 0, handSum = 0, headSum = 0, eyeSum = 0;
+    for (const p of raw) {
+      const i = p.y * gw + p.x; let v = ink[i];
+      for (const d of [-1, 1, -gw, gw]) v = Math.max(v, ink[i + d] ?? 0); // the darkest core of the drawn line
+      dark += v; faceSum += faceW[i]; handSum += handW[i]; headSum += head[i]; eyeSum += eyeW[i];
+      for (let k = 0; k < 8; k++) if (zone[i] & (1 << k)) zones[k]++;
+    }
+    const hand = handSum / m;
+    contours.push({ raw:pts, len, strength:clamp((dark / m - .2) / .7), inkMap:ink, inkW:gw, face:faceSum / m, hand, head:headSum / m > .5 && hand < .5, eye:eyeSum / m,
+      zones:Array.from(zones, c => c / m), fine:fineMid, ai:true, meshed:!!A.marks?.mesh });
+  }
+  // The strokes are the pencil's path; the graphite they reveal is the AI drawing itself (see revealSegment).
+  // Any visible line the strokes don't pass near yet gets a short stroke of its own, so nothing pops in at the end.
+  const R = REVEAL_RADIUS, covered = new Uint8Array(n);
+  const stamp = pts => { for (const p of pts) { const px = Math.round(p.x), py = Math.round(p.y); for (let v = -R; v <= R; v++) for (let u = -R; u <= R; u++) if (u * u + v * v <= R * R) { const q = (py + v) * gw + px + u; if (q >= 0 && q < n) covered[q] = 1; } } };
+  for (const c of contours) stamp(c.raw);
+  const visible = i => keep[i] > .3 && ink[i] > .18 && !texture(i);
+  const seen = new Uint8Array(n);
+  for (let start = 0; start < n; start++) {
+    if (seen[start] || covered[start] || !visible(start)) continue;
+    const pix = [start]; seen[start] = 1;
+    for (let h = 0; h < pix.length; h++) {
+      const i = pix[h], x = i % gw;
+      for (const d of [-gw - 1, -gw, -gw + 1, -1, 1, gw - 1, gw, gw + 1]) { const j = i + d; if (j >= 0 && j < n && !seen[j] && !covered[j] && Math.abs((j % gw) - x) <= 1 && visible(j)) { seen[j] = 1; pix.push(j); } }
+    }
+    if (pix.length < 5) continue;
+    let mx = 0, my = 0; for (const i of pix) { mx += i % gw; my += (i / gw) | 0; } mx /= pix.length; my /= pix.length;
+    let cxx = 0, cyy = 0, cxy = 0; for (const i of pix) { const dx = i % gw - mx, dy = ((i / gw) | 0) - my; cxx += dx * dx; cyy += dy * dy; cxy += dx * dy; }
+    const th = .5 * Math.atan2(2 * cxy, cxx - cyy), ux = Math.cos(th), uy = Math.sin(th);
+    const along = pix.map(i => ({ x:i % gw, y:(i / gw) | 0 })).sort((p, q) => (p.x * ux + p.y * uy) - (q.x * ux + q.y * uy));
+    const raw = along.filter((_, k) => k % 3 === 0 || k === along.length - 1);
+    if (raw.length < 2) continue;
+    stamp(raw);
+    const i0 = Math.round(my) * gw + Math.round(mx), m = raw.length;
+    contours.push({ raw, len:Math.hypot(raw[m - 1].x - raw[0].x, raw[m - 1].y - raw[0].y) + 2, strength:.4, face:faceW[i0], hand:handW[i0], head:!!head[i0] && handW[i0] < .5,
+      eye:eyeW[i0], zones:new Array(8).fill(0), fine:detail[i0] > .5, ai:true, meshed:!!A.marks?.mesh });
+  }
+  // The graphite layer: the AI line drawing in pencil grey with paper tooth, limited to what the strokes cover.
+  const layer = document.createElement('canvas'); layer.width = W; layer.height = H;
+  const lctx = layer.getContext('2d'), data = lctx.createImageData(W, H);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    const i = y * gw + x; if (!covered[i] || keep[i] < .2) continue;
+    const X = x + b.x, Y = y + b.y, p = (Y * W + X) * 4, grain = tooth.field[(Y % tooth.size) * tooth.size + X % tooth.size];
+    data.data[p] = 34; data.data[p + 1] = 32; data.data[p + 2] = 36;
+    data.data[p + 3] = 255 * clamp(Math.pow(ink[i], .85) * 1.1 * (.62 + grain * .5));
+  }
+  lctx.putImageData(data, 0, 0);
+  return { contours, layer };
 }
 function faceFromBox(x, y, w, h, source, eyes = null) {
   // The detector box runs roughly brow-to-chin; widen it upward to include forehead and hairline.
@@ -917,13 +1161,26 @@ function finalizeStroke(s, rand, ox, oy) {
     // Pressure: shading strokes are even with soft ends; contours land softly and flick off.
     const taper = { hatch:Math.min(1, u / .15, (1 - u) / .35), fill:Math.min(1, u / .06, (1 - u) / .12) }[s.kind] ?? Math.min(1, u / .12, (1 - u) / .2);
     pr[i] = (s.kind === 'hatch' ? .4 : .22) + (s.kind === 'hatch' ? .6 : .78) * Math.pow(clamp(taper), .7);
+    if (s.inkMap) { // AI strokes: pressure follows the drawn line's own light and dark along its length
+      const gx = Math.round(pts[i].x - ox), gy = Math.round(pts[i].y - oy), j = gy * s.inkW + gx;
+      let v = s.inkMap[j] ?? 0; for (const d of [-1, 1, -s.inkW, s.inkW]) v = Math.max(v, s.inkMap[j + d] ?? 0);
+      pr[i] *= lerp(.45, 1.15, clamp(v));
+    }
     if (i) len += Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]);
   }
-  return { ...s, x, y, pr, n, len };
+  const { inkMap, inkW, ...rest } = s; // the per-pixel map is only needed while sampling
+  return { ...rest, x, y, pr, n, len };
 }
 function styleStroke(s) {
   const str = s.strength ?? .5;
   if (s.kind === 'construct') { s.width = 1.1; s.alpha = .24; s.ghost = 0; }
+  else if (s.kind === 'contour' && s.ai) {
+    // AI line art already decides which lines matter; its own darkness becomes pressure. Features stay a touch finer.
+    s.width = (.7 + str * 1.5) * (s.fine ? .85 : 1); s.alpha = .3 + .7 * Math.pow(str, .75); s.ghost = .2;
+    const z = s.zones ?? [];
+    if (s.eye > .4 || z[ZB.EYE] > .4) s.alpha = Math.min(1, s.alpha + .1);
+    else if (z[ZB.BRIDGE] > .5 && z[ZB.NOSE] < .3) s.alpha *= .7;
+  }
   else if (s.kind === 'contour') { // confident graphite: strong lines press hard and broad, faint ones stay light
     s.width = lerp(1.05 + str * 1.5, .9 + str * 1.2, s.face); s.alpha = .42 + .58 * Math.pow(str, .7); s.ghost = .3;
     // Line hierarchy inside the face: lash lines and lids carry the expression, nostrils and the lip line come next,
@@ -1026,11 +1283,17 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const totalMs = durationSec * 1000, leadMs = 380, outroMs = Math.min(1200, totalMs * .07);
   const signMs = signature ? SIGN_MS * signPace(totalMs) : 0;
   const drawMs = totalMs - leadMs - outroMs - signMs;
-  const capacity = (drawMs / 1000) * SPEED;
+  let capacity = (drawMs / 1000) * SPEED;
   const cost = s => strokeCost(s.kind, s.len);
   const prep = (list, kind) => list.map(s => finalizeStroke(kind ? { ...s, kind } : s, rand, b.x, b.y)).filter(Boolean);
 
-  const contours = prep(A.contours, 'contour'), fills = prep(A.fills);
+  const ai = style === 'ai' && A.ai; // AI line art replaces the traced contours; otherwise the classic engine
+  const sourceContours = ai ? A.ai.contours : A.contours;
+  const contours = prep(sourceContours, 'contour'), fills = ai ? [] : prep(A.fills);
+  if (ai) { // the AI drawing is meant to be drawn whole: hurry the hand (up to 2.2×) rather than leave lines out
+    const needed = contours.reduce((a, s) => a + cost(s), 0) / .93;
+    capacity = Math.max(capacity, Math.min(needed, capacity * 2.2));
+  }
   const priority = s => s.strength * (.45 + Math.min(1.4, s.len / 70));
   const group = s => s.hand > .5 ? 'hand' : s.face > .5 || s.head ? 'head' : 'body';
   const pool = (list, name) => list.filter(s => group(s) === name).sort((a, z) => priority(z) - priority(a));
@@ -1044,7 +1307,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   };
   // Construction lines: a few long, faint, straightened lines that block in the figure first.
   const constructBudget = capacity * .06; let constructUsed = 0; const construct = [];
-  for (const s of A.contours.slice().sort((a, z) => z.len - a.len)) {
+  for (const s of sourceContours.slice().sort((a, z) => z.len - a.len)) {
     if (s.len < 40) break;
     if (s.face > .3 || s.hand > .3) continue; // guide lines block in hair, shoulders and body — never across the face or hands
     // A searching line: the same curve, loosened, drawn a couple of pixels to one side and overshooting its ends.
@@ -1059,19 +1322,19 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   // Shares of the time budget. Lines always come first; shading only gets what the "선 + 그림자" style allows.
   const shaded = style === 'shade';
   const hatches = shaded ? prep([...makeShading(A, density, rand), ...makeHairStrands(A, density, rand)]).sort((a, z) => z.shade - a.shade) : [];
-  const headC = take(headContours, shaded ? .28 : .40, 'headContour');
-  const headF = take(fills, .08, 'fill');
+  const headC = take(headContours, shaded ? .28 : ai ? .46 : .40, 'headContour');
+  const headF = take(fills, ai ? 0 : .08, 'fill');
   const accents = [];
-  let accentBudget = capacity * .03 + carry;
-  for (const s of headC.filter(c => c.face > .5).sort((a, z) => z.strength - a.strength).slice(0, Math.ceil(headC.length * .08))) {
+  let accentBudget = capacity * (ai ? 0 : .03) + carry; // the AI drawing already weights its own lines; no doubled accents
+  for (const s of ai ? [] : headC.filter(c => c.face > .5).sort((a, z) => z.strength - a.strength).slice(0, Math.ceil(headC.length * .08))) {
     const c = { ...s, kind:'accent', x:s.x.map(v => v + (rand() - .5) * .8), y:s.y.map(v => v + (rand() - .5) * .8), pr:s.pr.slice() };
     if (cost(c) <= accentBudget) { accents.push(c); accentBudget -= cost(c); }
   }
   carry = accentBudget;
   const headH = take(hatches.filter(s => group(s) === 'head'), .10, 'headHatch');
-  const handC = take(handContours, shaded ? .10 : .15, 'handContour');
+  const handC = take(handContours, shaded ? .10 : ai ? .12 : .15, 'handContour');
   const handH = take(hatches.filter(s => group(s) === 'hand'), .03, 'handHatch');
-  const bodyC = take(bodyContours, shaded ? .20 : .30, 'bodyContour');
+  const bodyC = take(bodyContours, shaded ? .20 : ai ? .36 : .30, 'bodyContour');
   const bodyH = take(hatches.filter(s => group(s) === 'body'), .14, 'bodyHatch');
 
   const faceCenter = { x:b.x + face.x, y:b.y + face.y - face.ry * .4 };
@@ -1102,12 +1365,16 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const drawEndMs = leadMs + drawMs, faceEndMs = faceEndIndex && strokes[faceEndIndex - 1] ? strokes[faceEndIndex - 1].tUp : 0;
   if (signature) strokes.push(...signatureStrokes(strokes, drawEndMs, random(4321), signPace(totalMs)));
 
-  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 60, y:H * .9 }, faceEndMs, outside:A.outside, stats, audio:buildAudioEvents(strokes) };
+  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 60, y:H * .9 }, faceEndMs, outside:A.outside, ai:!!ai, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
 }
 
 // ───────────────────────── rendering ─────────────────────────
 let cursor = { stroke:0, point:0, time:-1 };
-function resetInk() { inkCtx.clearRect(0, 0, W, H); cursor = { stroke:0, point:0, time:-1 }; }
+function resetInk() { inkCtx.clearRect(0, 0, W, H); revealCtx.clearRect(0, 0, W, H); cursor = { stroke:0, point:0, time:-1 }; }
+function revealSegment(s, i) {
+  revealCtx.lineWidth = REVEAL_RADIUS * 2 + 1;
+  revealCtx.beginPath(); revealCtx.moveTo(s.x[i], s.y[i]); revealCtx.lineTo(s.x[i + 1], s.y[i + 1]); revealCtx.stroke();
+}
 let inkDarkness = Number(darkness.value) / 100; // "선 진하기": scales every stroke's graphite
 function drawSegment(s, i) {
   const p = (s.pr[i] + s.pr[i + 1]) / 2, a = s.alpha * p * inkDarkness;
@@ -1134,10 +1401,13 @@ function advanceInk(t) {
   while (cursor.stroke < list.length) {
     const s = list[cursor.stroke];
     if (t < s.tDown) break;
-    const signing = s.kind === 'sign' || s.kind === 'dot';
+    const signing = s.kind === 'sign' || s.kind === 'dot', revealing = s.ai && plan.aiLayer;
     if (signing && drew) clip();
     const done = t >= s.tUp, target = done ? s.n - 1 : Math.floor(strokeProgress(s, t));
-    while (cursor.point < target) { drawSegment(s, cursor.point++); if (!signing) drew = true; }
+    while (cursor.point < target) {
+      if (revealing) revealSegment(s, cursor.point++);
+      else { drawSegment(s, cursor.point++); if (!signing) drew = true; }
+    }
     if (!done) break;
     cursor.stroke++; cursor.point = 0;
   }
@@ -1176,7 +1446,17 @@ function drawPencil(pen) {
 function renderFrame(t) {
   ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.drawImage(paperCanvas, 0, 0);
   if (!plan) return;
-  advanceInk(t); ctx.drawImage(ink, 0, 0);
+  advanceInk(t);
+  if (plan.aiLayer) {
+    // AI graphite, darkened by the "선 진하기" slider (a second pass beyond 100%), shown only where the pencil has been.
+    aiFrameCtx.clearRect(0, 0, W, H); aiFrameCtx.globalCompositeOperation = 'source-over';
+    aiFrameCtx.globalAlpha = Math.min(1, inkDarkness); aiFrameCtx.drawImage(plan.aiLayer, 0, 0);
+    if (inkDarkness > 1) { aiFrameCtx.globalAlpha = Math.min(1, inkDarkness - 1); aiFrameCtx.drawImage(plan.aiLayer, 0, 0); }
+    aiFrameCtx.globalAlpha = 1; aiFrameCtx.globalCompositeOperation = 'destination-in'; aiFrameCtx.drawImage(reveal, 0, 0);
+    aiFrameCtx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(aiFrame, 0, 0);
+  }
+  ctx.drawImage(ink, 0, 0);
   const pen = pencilAt(t); if (pen) drawPencil(pen);
 }
 
@@ -1293,7 +1573,8 @@ function rebuild() {
   resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
   const faceAt = plan.faceEndMs ? ` 얼굴은 ${(plan.faceEndMs / 1000).toFixed(1)}초에 완성됩니다.` : '';
   const hands = analysis.marks?.hands?.length ?? 0, detailNote = analysis.marks?.mesh ? ` 이목구비${hands ? `와 손 ${hands}개` : ''}를 세밀하게 그립니다.` : '';
-  status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
+  const aiNote = styleSelect.value === 'ai' ? (plan.ai ? ' AI 선화로 그립니다.' : ' AI 선화를 불러오지 못해(인터넷 연결 확인) 기존 선 방식으로 그렸습니다.') : '';
+  status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
   preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy;
@@ -1308,6 +1589,12 @@ photoInput.addEventListener('change', event => {
     await new Promise(resolve => setTimeout(resolve, 30));
     const result = await analyzePhoto(image);
     if (token !== loadToken) return;
+    if (styleSelect.value === 'ai') {
+      status.textContent = 'AI가 사진을 선화로 옮기고 있습니다… (사진 한 장에 10초 안팎, 처음에는 모델도 받습니다)';
+      await new Promise(resolve => setTimeout(resolve, 30));
+      await ensureLineArt(result);
+      if (token !== loadToken) return;
+    }
     analysis = result; rebuild();
   };
   image.src = URL.createObjectURL(file);
@@ -1334,7 +1621,16 @@ canvas.addEventListener('pointerup', event => {
 });
 seconds.addEventListener('input', () => { document.querySelector('#secondsLabel').textContent = `${seconds.value}초`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 strength.addEventListener('input', () => { document.querySelector('#strengthLabel').textContent = `${strength.value}%`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
-styleSelect.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; setBusy(false); rebuild(); });
+styleSelect.addEventListener('change', async () => {
+  stopPlayback(); preview.textContent = '미리보기'; setBusy(false);
+  if (styleSelect.value === 'ai' && analysis && !analysis.ai && !analysis.aiFailed) {
+    const target = analysis; setBusy(true);
+    status.textContent = 'AI가 사진을 선화로 옮기고 있습니다… (사진 한 장에 10초 안팎)';
+    await ensureLineArt(target); setBusy(false);
+    if (analysis !== target) return;
+  }
+  rebuild();
+});
 signatureToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 darkness.addEventListener('input', () => {
   document.querySelector('#darknessLabel').textContent = `${darkness.value}%`; inkDarkness = Number(darkness.value) / 100;
@@ -1342,7 +1638,9 @@ darkness.addEventListener('input', () => {
   stopPlayback(); preview.textContent = '미리보기'; resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
 });
 volume.addEventListener('input', () => { document.querySelector('#volumeLabel').textContent = `${volume.value}%`; sound.setVolume(Number(volume.value)); });
-loadFaceDetector().catch(() => {}); loadSegmenter().catch(() => {}); loadLandmarkers().catch(() => {}); // start fetching the models early so the first photo is quick
+// Start fetching the models early so the first photo is quick.
+loadFaceDetector().catch(() => {}); loadSegmenter().catch(() => {}); loadLandmarkers().catch(() => {}); loadObjectSegmenter().catch(() => {});
+if (styleSelect.value === 'ai') loadLineArt().catch(() => {});
 preview.addEventListener('click', async () => {
   if (!plan) return;
   if (session) { stopPlayback(); preview.textContent = '미리보기'; renderFrame(plan.totalMs); return; }
