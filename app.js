@@ -7,6 +7,9 @@ const styleSelect = document.querySelector('#style');
 const darkness = document.querySelector('#darkness');
 const formatSelect = document.querySelector('#format');
 const signatureToggle = document.querySelector('#signature');
+const titleInput = document.querySelector('#title');
+const introToggle = document.querySelector('#intro');
+const messageInput = document.querySelector('#message');
 const soundToggle = document.querySelector('#sound');
 const volume = document.querySelector('#volume');
 const preview = document.querySelector('#preview');
@@ -765,16 +768,28 @@ function joinPaths(paths, maxGap = 2.9) {
   return paths;
 }
 function traceLineArt(A) {
-  const { gw, gh, n, b, lineMap, person, objects, faceW, handW, detail, zone, eyeW, head } = A;
-  // What to draw: people, animals and objects. Bare backgrounds stay paper.
+  const { gw, gh, n, b, lineMap, person, objects, faceW, handW, detail, zone, eyeW, head, b1, b4 } = A;
+  // What to draw: people, animals and objects. Bare backgrounds stay paper. The face only vouches for its own core —
+  // its soft falloff reaches past the jaw, and let background lettering beside the cheek slip in.
   const keepRaw = new Float32Array(n);
-  for (let i = 0; i < n; i++) keepRaw[i] = person || objects ? Math.max(person?.[i] ?? 0, objects?.[i] ?? 0, faceW[i], clamp(handW[i] * 1.5)) : 1;
+  for (let i = 0; i < n; i++) keepRaw[i] = person || objects ? Math.max(person?.[i] ?? 0, objects?.[i] ?? 0, clamp((faceW[i] - .9) * 10), clamp(handW[i] * 1.5)) : 1;
   const keep = blur(keepRaw, gw, gh, 4);
   // The model draws most lines mid-grey, so thresholds are relative to its own darkest lines in this photo.
   const inkSample = []; for (let i = 0; i < n; i += 2) if (keep[i] > .3 && lineMap[i] > .05) inkSample.push(lineMap[i]);
   inkSample.sort((a, z) => a - z);
   const top = Math.max(.25, inkSample[Math.floor(inkSample.length * .995)] ?? .6), ink = new Float32Array(n);
   for (let i = 0; i < n; i++) ink[i] = clamp(lineMap[i] / top);
+  // Out-of-focus edges on the face (a blurred hand or strand in front of the cheek) are not part of the portrait.
+  // A crisp edge is much steeper at a fine scale than a coarse one; a defocused edge is equally gentle at both.
+  const grad = f => { const m = new Float32Array(n); for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) { const i = y * gw + x; m[i] = Math.hypot(f[i + 1] - f[i - 1], f[i + gw] - f[i - gw]); } return m; };
+  const fineG = blur(grad(b1), gw, gh, 2), coarseG = blur(grad(b4), gw, gh, 2), protect = Z.EYE | Z.IRIS | Z.BROW | Z.LIPS | Z.NOSE | Z.JAW | Z.HAND;
+  let softened = 0;
+  for (let i = 0; i < n; i++) {
+    if (faceW[i] < .5 || zone[i] & protect || ink[i] < .1) continue;
+    const sharp = fineG[i] / (coarseG[i] + 1.5), keepInk = clamp((sharp - 1.2) / .35);
+    if (keepInk < 1) { ink[i] *= keepInk; softened++; }
+  }
+  A.softened = softened;
   A.ink = ink;
   // Busy textures (sequins, knit, prints) away from the head and hands: lines crowd together there, so only firm
   // ones count. Hair is exempt — its crowded strands are exactly what a portrait needs.
@@ -1413,11 +1428,102 @@ function signatureStrokes(strokes, startMs, rand, pace) {
   }
   return out;
 }
-function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = true) {
+// ───────────────────────── handwritten message ─────────────────────────
+// A short line ("오늘하루 행복하세요!") written in pencil after the drawing, before the signature. The glyphs come from
+// Nanum Pen Script (OFL): each character is rendered large, thinned to its centreline and traced into pen strokes.
+const MESSAGE_FONT = '"Nanum Pen Script", "Malgun Gothic", sans-serif', MESSAGE_PX = 200;
+const messageGlyphCache = new Map();
+function messageGlyphs(text) {
+  // Returns strokes in "em" units (height of the rendered line = 1), in writing order, or null while the font loads.
+  const face = `${MESSAGE_PX}px ${MESSAGE_FONT}`;
+  if (document.fonts && !document.fonts.check(face, text)) { document.fonts.load(face, text).then(() => { if (!session) rebuild(); }).catch(() => {}); return null; }
+  if (messageGlyphCache.has(text)) return messageGlyphCache.get(text);
+  const measure = document.createElement('canvas').getContext('2d'); measure.font = face;
+  const w = Math.ceil(measure.measureText(text).width) + 40, h = Math.round(MESSAGE_PX * 1.3), c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently:true }); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = '#000'; g.font = face; g.textBaseline = 'middle';
+  g.fillText(text, 20, h / 2);
+  const d = g.getImageData(0, 0, w, h).data, on = new Uint8Array(w * h);
+  for (let i = 0; i < on.length; i++) on[i] = d[i * 4] < 140 ? 1 : 0;
+  thinLines(on, w, h);
+  const paths = joinPaths(traceSkeleton(on, w), 2.2).filter(p => p.length > 4);
+  // Writing order: character by character (left to right); within a character, top strokes first, each starting at its left/top end.
+  const edges = [20]; for (let k = 1; k <= text.length; k++) edges.push(20 + measure.measureText(text.slice(0, k)).width);
+  const charOf = x => { let k = 0; while (k < text.length - 1 && x >= edges[k + 1]) k++; return k; };
+  const ordered = paths.map(p => {
+    const xs = p.map(q => q.x), ys = p.map(q => q.y), cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const a = p[0], z = p[p.length - 1], forward = a.x + a.y * .6 <= z.x + z.y * .6;
+    return { pts:forward ? p : p.slice().reverse(), char:charOf(cx), top:Math.min(...ys), left:Math.min(...xs) };
+  }).sort((p, q) => p.char - q.char || (Math.abs(p.top - q.top) > MESSAGE_PX * .12 ? p.top - q.top : p.left - q.left));
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const o of ordered) for (const q of o.pts) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+  const em = Math.max(1, y1 - y0);
+  const result = ordered.length ? { aspect:(x1 - x0) / em, strokes:ordered.map(o => chaikin(simplify(o.pts, 1.1)).map(q => ({ x:(q.x - x0) / em, y:(q.y - y0) / em }))) } : null;
+  messageGlyphCache.set(text, result);
+  return result;
+}
+function placeMessage(glyphs, strokes, A) {
+  // Find the emptiest place on the canvas for the line: never across the face or hands, avoiding the figure where
+  // there is bare paper, clear of the signature — and a little smaller when only a small gap is free.
+  const G = 20, cols = Math.ceil(W / G), rows = Math.ceil(H / G), cost = new Float32Array(cols * rows);
+  for (const s of strokes) for (let i = 0; i < s.n; i += 2) {
+    const cx = Math.floor(s.x[i] / G), cy = Math.floor(s.y[i] / G); if (cx >= 0 && cy >= 0 && cx < cols && cy < rows) cost[cy * cols + cx] += 1;
+  }
+  const { b, face, gw, gh, subject, handW } = A;
+  for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
+    const x = (cx + .5) * G, y = (cy + .5) * G, gx = Math.floor(x - b.x), gy = Math.floor(y - b.y), inside = gx >= 0 && gy >= 0 && gx < gw && gy < gh;
+    const i = inside ? gy * gw + gx : -1;
+    if (Math.hypot((x - b.x - face.x) / (face.rx * 1.35), (y - b.y - face.y) / (face.ry * 1.3)) < 1) cost[cy * cols + cx] += 400; // the face stays clear
+    if (inside && handW[i] > .2) cost[cy * cols + cx] += 400;
+    if (inside) cost[cy * cols + cx] += subject[i] * 6;
+  }
+  const maxW = W - PAD * 2 - 40, sig = { x1:PAD + W * .28 + 60, y1:PAD + 110 };
+  let best = null;
+  for (const size of [62, 52, 44]) {
+    let height = size, width = height * glyphs.aspect;
+    if (width > maxW) { width = maxW; height = width / glyphs.aspect; }
+    for (let y = PAD + 20; y + height <= H - PAD - 20; y += 10) for (let x = PAD + 20; x + width <= W - PAD - 20; x += 10) {
+      if (x < sig.x1 && y < sig.y1) continue;
+      let sum = 0;
+      for (let cy = Math.floor((y - 10) / G); cy <= Math.floor((y + height + 10) / G); cy++)
+        for (let cx = Math.floor((x - 10) / G); cx <= Math.floor((x + width + 10) / G); cx++) if (cx >= 0 && cy >= 0 && cx < cols && cy < rows) sum += cost[cy * cols + cx];
+      // Bigger is better when it fits; ties go to the lower half and the centre line, where a message naturally sits.
+      const score = sum - height * 1.5 + Math.abs(x + width / 2 - W / 2) * .03 + Math.abs(y - H * .8) * .03;
+      if (!best || score < best.score) best = { score, x, y, height };
+    }
+  }
+  best ??= { x:(W - 62 * glyphs.aspect) / 2, y:H - PAD - 92, height:62 };
+  return glyphs.strokes.map(p => p.map(q => ({ x:best.x + q.x * best.height, y:best.y + q.y * best.height })));
+}
+const messageMs = (text, pace) => text ? clamp(500 + [...text].length * 190, 1400, 3800) * pace + 500 : 0; // writing + travel
+function messageStrokes(glyphs, strokes, startMs, rand, pace, text, A) {
+  const paths = placeMessage(glyphs, strokes, A), out = [];
+  for (const raw of paths) {
+    const s = finalizeStroke({ raw, kind:'sign', fine:true, face:0, strength:1 }, rand, 0, 0);
+    if (!s) continue;
+    // Pressed firmly, like a note meant to be read: a broad, dark line with only a slight taper at the ends.
+    for (let i = 0; i < s.n; i++) s.pr[i] = .75 + .25 * s.pr[i];
+    out.push(Object.assign(s, { width:3.2, alpha:1.3, ghost:.55, message:true }));
+  }
+  const writeMs = clamp(500 + [...text].length * 190, 1400, 3800) * pace, travelMs = 380 * pace, total = out.reduce((a, s) => a + s.len, 0) || 1;
+  const liftMs = out.length > 1 ? Math.min(writeMs * .35, (out.length - 1) * 40 * pace) : 0; // pen lifts between strokes
+  let t = startMs + travelMs, prev = null;
+  for (const s of out) {
+    s.tLift = prev ? prev.tUp : startMs; s.chain = false;
+    t += prev ? liftMs / (out.length - 1) : 0;
+    s.tDown = t; t += (writeMs - liftMs) * s.len / total; s.tUp = t; prev = s;
+  }
+  return out;
+}
+function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = true, showIntro = true, message = '') {
   const density = densityPercent / 100, rand = random(1234), { b, face } = A;
-  const totalMs = durationSec * 1000, leadMs = 380, outroMs = Math.min(1200, totalMs * .07);
+  const totalMs = durationSec * 1000, outroMs = Math.min(1200, totalMs * .07);
+  // Opening: the reference photo sits on the canvas for a moment, then fades away to bare paper before the pencil comes in.
+  const intro = showIntro ? { hold:Math.min(1000, totalMs * .08), fade:Math.min(700, totalMs * .06) } : null;
+  const introMs = intro ? intro.hold + intro.fade : 0, leadMs = 380 + introMs;
   const signMs = signature ? SIGN_MS * signPace(totalMs) : 0;
-  const drawMs = totalMs - leadMs - outroMs - signMs;
+  const messageText = (message ?? '').trim(), glyphs = messageText ? messageGlyphs(messageText) : null;
+  const writeMsgMs = glyphs ? messageMs(messageText, signPace(totalMs)) : 0;
+  const drawMs = totalMs - leadMs - outroMs - signMs - writeMsgMs;
   let capacity = (drawMs / 1000) * SPEED;
   const cost = s => strokeCost(s.kind, s.len);
   const prep = (list, kind) => list.map(s => finalizeStroke(kind ? { ...s, kind } : s, rand, b.x, b.y)).filter(Boolean);
@@ -1507,11 +1613,14 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
     px = s.x[s.n - 1]; py = s.y[s.n - 1];
   }
   const scale = strokes.length ? drawMs / t : 0;
-  for (const s of strokes) { s.tLift = s.tLift * scale + (s === strokes[0] ? 0 : leadMs); s.tDown = s.tDown * scale + leadMs; s.tUp = s.tUp * scale + leadMs; }
+  for (const s of strokes) { s.tLift = s.tLift * scale + (s === strokes[0] ? introMs : leadMs); s.tDown = s.tDown * scale + leadMs; s.tUp = s.tUp * scale + leadMs; }
   const drawEndMs = leadMs + drawMs, faceEndMs = faceEndIndex && strokes[faceEndIndex - 1] ? strokes[faceEndIndex - 1].tUp : 0;
-  if (signature) strokes.push(...signatureStrokes(strokes, drawEndMs, random(4321), signPace(totalMs)));
+  let finaleMs = drawEndMs;
+  if (glyphs) { const msg = messageStrokes(glyphs, strokes, drawEndMs, random(777), signPace(totalMs), messageText, A); strokes.push(...msg); if (msg.length) finaleMs = msg[msg.length - 1].tUp; }
+  if (signature) strokes.push(...signatureStrokes(strokes, finaleMs, random(4321), signPace(totalMs)));
 
-  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, ai:!!ai, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
+  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, ai:!!ai,
+    intro:intro && { ...intro, photo:A.work, face:A.face }, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
 }
 
 // ───────────────────────── rendering ─────────────────────────
@@ -1593,8 +1702,58 @@ function renderFrame(t) {
   ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(sceneCanvas, 0, 0);
   onSheet(() => { ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawSheet(t); });
+  drawPolaroid(t);
+  drawTitle();
   if (!plan) return;
   const pen = pencilAt(t); if (pen) onSheet(() => drawPencil(pen));
+}
+// ───────────────────────── shorts title ─────────────────────────
+const TITLE_FONT = '"Black Han Sans", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+function titleLayout(text) {
+  // Up to two lines in the wall space above the canvas board, as large as fits: shorts-caption style.
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 2);
+  if (!lines.length) return null;
+  const maxW = VIEW_W - 80, top = 56, bottom = BOARD.y - 12, maxSize = 104, minSize = 44; // clear of the shorts top bar
+  const width = (line, size) => { ctx.font = `${size}px ${TITLE_FONT}`; return ctx.measureText(line).width; };
+  // One long line with spaces: break it near the middle rather than shrinking it to a whisper.
+  if (lines.length === 1 && width(lines[0], maxSize) > maxW && lines[0].includes(' ')) {
+    const words = lines[0].split(' '); let best = null;
+    for (let k = 1; k < words.length; k++) {
+      const a = words.slice(0, k).join(' '), b = words.slice(k).join(' '), wider = Math.max(width(a, maxSize), width(b, maxSize));
+      if (!best || wider < best.wider) best = { a, b, wider };
+    }
+    lines.splice(0, 1, best.a, best.b);
+  }
+  const heightFit = (bottom - top) / (lines.length * 1.12);
+  let size = Math.min(maxSize, heightFit);
+  for (const line of lines) size = Math.min(size, maxSize * maxW / Math.max(1, width(line, maxSize)));
+  return { lines, size:Math.max(minSize, Math.floor(size)), top, bottom };
+}
+function drawTitle() {
+  const layout = titleLayout(titleInput?.value ?? ''); if (!layout) return;
+  const { lines, size, top, bottom } = layout, lineH = size * 1.12, blockH = lineH * lines.length;
+  // The web font arrives in per-script slices: fetch the glyphs of this title first, then redraw with them.
+  const face = `${size}px ${TITLE_FONT}`, text = lines.join('');
+  if (document.fonts && !document.fonts.check(face, text)) { document.fonts.load(face, text).then(redrawStill).catch(() => {}); }
+  let y = top + (bottom - top - blockH) / 2 + lineH / 2;
+  ctx.save();
+  ctx.font = `${size}px ${TITLE_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+  for (const line of lines) {
+    // Soft drop shadow, a thick black outline, then white fill: legible over the wooden wall at phone size.
+    ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = size * .18; ctx.shadowOffsetY = size * .06;
+    ctx.strokeStyle = '#111'; ctx.lineWidth = size * .17; ctx.strokeText(line, VIEW_W / 2, y);
+    ctx.shadowColor = 'transparent'; ctx.fillStyle = '#fff'; ctx.fillText(line, VIEW_W / 2, y);
+    y += lineH;
+  }
+  ctx.restore();
+}
+async function ensureTitleFont() {
+  const layout = titleLayout(titleInput?.value ?? ''); if (!layout || !document.fonts) return;
+  try { await withTimeout(document.fonts.load(`${layout.size}px ${TITLE_FONT}`, layout.lines.join('')), 4000); } catch {}
+}
+function redrawStill() { // refresh the still preview after a setting that doesn't change the drawing plan
+  if (session) return;
+  if (plan) { renderFrame(plan.totalMs); drawFaceGuide(); } else renderFrame(0);
 }
 function drawSheet(t) {
   ctx.drawImage(paperCanvas, 0, 0);
@@ -1610,6 +1769,38 @@ function drawSheet(t) {
     ctx.drawImage(aiFrame, 0, 0);
   }
   ctx.drawImage(ink, 0, 0);
+}
+function drawPolaroid(t) {
+  // The reference photo as a polaroid taped to the canvas at a slight angle; it lifts away and fades before drawing starts.
+  const intro = plan?.intro; if (!intro || t >= intro.hold + intro.fade) return;
+  intro.card ??= polaroidCard(intro.photo, intro.face); // built once, so it fades as one solid piece
+  const { card } = intro, u = t < intro.hold ? 0 : ease((t - intro.hold) / intro.fade);
+  const cx = VIEW_W / 2 + u * 40, cy = BOARD.y + BOARD.h * .47 - u * 90, angle = -.085 + u * .05, scale = 1 + u * .05;
+  ctx.save();
+  ctx.globalAlpha = 1 - u;
+  ctx.translate(cx, cy); ctx.rotate(angle); ctx.scale(scale, scale);
+  ctx.shadowColor = 'rgba(20,12,6,.5)'; ctx.shadowBlur = 38 + u * 30; ctx.shadowOffsetX = 14 + u * 16; ctx.shadowOffsetY = 22 + u * 34;
+  ctx.drawImage(card, -card.width / 2, -card.height / 2);
+  ctx.restore();
+}
+function polaroidCard(photo, face) {
+  // Square crop centred a little below the eyes, like a portrait snapshot, in a white instant-film frame.
+  const side = Math.min(photo.width, photo.height, Math.max(face.rx, face.ry) * 3.4);
+  const sx = clamp(face.x - side / 2, 0, photo.width - side), sy = clamp(face.y - side * .46, 0, photo.height - side);
+  const img = Math.round(BOARD.w * .68), border = Math.round(img * .055), bottom = Math.round(img * .26), tape = 32;
+  const cardW = img + border * 2, cardH = img + border + bottom;
+  const card = document.createElement('canvas'); card.width = cardW; card.height = cardH + tape;
+  const g = card.getContext('2d'); g.translate(0, tape);
+  const paper = g.createLinearGradient(0, 0, cardW, cardH); paper.addColorStop(0, '#fdfcf8'); paper.addColorStop(1, '#ece7dc');
+  g.fillStyle = paper; g.fillRect(0, 0, cardW, cardH);
+  g.drawImage(photo, sx, sy, side, side, border, border, img, img);
+  g.fillStyle = 'rgba(255,240,215,.08)'; g.fillRect(border, border, img, img); // a touch of instant-film warmth
+  g.strokeStyle = 'rgba(0,0,0,.12)'; g.lineWidth = 2; g.strokeRect(border, border, img, img);
+  // A strip of translucent tape holding it to the canvas.
+  g.translate(cardW / 2, 0); g.rotate(.06);
+  g.fillStyle = 'rgba(236,228,205,.78)'; g.fillRect(-cardW * .16, -tape + 4, cardW * .32, 58);
+  g.strokeStyle = 'rgba(160,145,115,.25)'; g.lineWidth = 1.5; g.strokeRect(-cardW * .16, -tape + 4, cardW * .32, 58);
+  return card;
 }
 
 // ───────────────────────── pencil sound ─────────────────────────
@@ -1723,7 +1914,7 @@ function drawFaceGuide(box) {
 }
 function rebuild() {
   if (!analysis) return;
-  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, signatureToggle?.checked ?? true);
+  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, signatureToggle?.checked ?? true, introToggle?.checked ?? true, messageInput?.value ?? '');
   resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
   const faceAt = plan.faceEndMs ? ` 얼굴은 ${(plan.faceEndMs / 1000).toFixed(1)}초에 완성됩니다.` : '';
   const hands = analysis.marks?.hands?.length ?? 0, detailNote = analysis.marks?.mesh ? ` 이목구비${hands ? `와 손 ${hands}개` : ''}를 세밀하게 그립니다.` : '';
@@ -1731,7 +1922,7 @@ function rebuild() {
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy;
   strength.disabled = busy || styleSelect.value === 'line'; // shadow amount only matters when shading is drawn
 }
 let loadToken = 0;
@@ -1789,6 +1980,14 @@ styleSelect.addEventListener('change', async () => {
   rebuild();
 });
 signatureToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
+introToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
+let messageTimer = 0; // re-plan shortly after typing stops, not on every keystroke
+messageInput?.addEventListener('input', () => { clearTimeout(messageTimer); messageTimer = setTimeout(() => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); }, 350); });
+titleInput?.addEventListener('input', () => {
+  const lines = titleInput.value.split('\n'); if (lines.length > 2) titleInput.value = lines.slice(0, 2).join('\n'); // two lines at most
+  redrawStill();
+});
+document.fonts?.load(`100px ${TITLE_FONT}`, '가나다 ABC').then(redrawStill).catch(() => {}); // the title font arrives from the web
 darkness.addEventListener('input', () => {
   document.querySelector('#darknessLabel').textContent = `${darkness.value}%`; inkDarkness = Number(darkness.value) / 100;
   if (!plan) return; // no re-analysis needed: just redraw the finished sketch with the new pressure
@@ -1819,6 +2018,7 @@ formatSelect.addEventListener('change', updateExportLabel); updateExportLabel();
 exportButton.addEventListener('click', async () => {
   if (!plan || !window.MediaRecorder) return;
   setBusy(true); preview.textContent = '미리보기';
+  await ensureTitleFont(); // never record a first frame with fallback glyphs in the title
   const withAudio = soundToggle.checked && sound.ensure(), wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
   const tracks = [...canvas.captureStream(30).getVideoTracks(), ...(withAudio ? sound.stream.stream.getAudioTracks() : [])];
   const mimeType = supportedType(wanted, withAudio) || supportedType(other, withAudio);

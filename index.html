@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>연필 초상화 영상 제작기</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Nanum+Pen+Script&display=swap" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -16,6 +17,7 @@
     <section class="controls" aria-label="영상 설정">
       <label class="upload" for="photo"><span>사진 선택</span><small id="fileName">JPG · PNG · WEBP</small></label>
       <input id="photo" type="file" accept="image/*" />
+      <label>영상 제목 <small class="note">최대 2줄 · Enter로 줄바꿈</small><textarea id="title" rows="2" maxlength="60" placeholder="예) 임영웅 연필 초상화&#10;20초 만에 그려보기"></textarea></label>
       <label>영상 길이 <output id="secondsLabel">20초</output><input id="seconds" type="range" min="4" max="20" value="20" /></label>
       <label>그림 스타일
         <select id="style">
@@ -26,6 +28,8 @@
       </label>
       <label>선 진하기 <output id="darknessLabel">100%</output><input id="darkness" type="range" min="50" max="200" value="100" /></label>
       <label>그림자 해칭 양 <output id="strengthLabel">40%</output><input id="strength" type="range" min="0" max="100" value="40" /></label>
+      <label class="check"><input id="intro" type="checkbox" checked /> 시작할 때 원본 사진 보여주기</label>
+      <label>손글씨 한 줄 <small class="note">그림 완성 후 빈 곳에 연필로 씁니다</small><input id="message" type="text" maxlength="24" placeholder="예) 오늘하루 행복하세요!" /></label>
       <label class="check"><input id="signature" type="checkbox" checked /> 마지막에 서명 넣기 (David Lee.)</label>
       <label class="check"><input id="sound" type="checkbox" checked /> 연필 사각거리는 소리 넣기</label>
       <label>연필 소리 크기 <output id="volumeLabel">20%</output><input id="volume" type="range" min="0" max="100" value="20" /></label>
