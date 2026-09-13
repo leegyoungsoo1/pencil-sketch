@@ -16,9 +16,16 @@
     <section class="controls" aria-label="영상 설정">
       <label class="upload" for="photo"><span>사진 선택</span><small id="fileName">JPG · PNG · WEBP</small></label>
       <input id="photo" type="file" accept="image/*" />
-      <label>영상 길이 <output id="secondsLabel">10초</output><input id="seconds" type="range" min="4" max="20" value="10" /></label>
-      <label>명암 밀도 <output id="strengthLabel">76%</output><input id="strength" type="range" min="40" max="100" value="76" /></label>
+      <label>영상 길이 <output id="secondsLabel">20초</output><input id="seconds" type="range" min="4" max="20" value="20" /></label>
+      <label>그림 스타일
+        <select id="style">
+          <option value="shade">선 + 그림자 살짝</option>
+          <option value="line">선만 (크로키)</option>
+        </select>
+      </label>
+      <label>그림자 양 <output id="strengthLabel">50%</output><input id="strength" type="range" min="0" max="100" value="50" /></label>
       <label class="check"><input id="sound" type="checkbox" checked /> 연필 사각거리는 소리 넣기</label>
+      <label>연필 소리 크기 <output id="volumeLabel">30%</output><input id="volume" type="range" min="0" max="100" value="30" /></label>
       <div class="actions"><button id="preview" type="button">미리보기</button><button id="export" type="button" class="primary">WebM 영상 저장</button></div>
       <p id="status" role="status">사진을 선택하면 흑연 연필 초상화로 변환합니다.</p>
     </section>
