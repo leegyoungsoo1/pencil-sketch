@@ -14,10 +14,21 @@
       <h1>연필 초상화 영상 제작기</h1>
       <p>사진을 넣으면 빈 종이에 연필이 한 획씩 크로키를 그려 나가는 영상을 만듭니다.</p>
     </section>
-    <section class="controls" aria-label="영상 설정">
+    <section class="controls quick" aria-label="사진과 문구">
       <label class="upload" for="photo"><span>사진 선택</span><small id="fileName">JPG · PNG · WEBP</small></label>
       <input id="photo" type="file" accept="image/*" />
       <label>영상 제목 <small class="note">최대 2줄 · Enter로 줄바꿈</small><textarea id="title" rows="2" maxlength="60" placeholder="예) 임영웅 연필 초상화&#10;20초 만에 그려보기"></textarea></label>
+      <label>손글씨 한 줄 <small class="note">그림 완성 후 빈 곳에 연필로 씁니다</small><input id="message" type="text" maxlength="24" placeholder="예) 오늘하루 행복하세요!" /></label>
+      <p id="status" role="status">사진을 선택하면 흑연 연필 초상화로 변환합니다.</p>
+    </section>
+    <section class="stage">
+      <div class="canvas-wrap">
+        <canvas id="canvas" width="1080" height="1920" aria-label="연필 드로잉 미리보기"></canvas>
+        <div id="busy" class="busy" hidden><span class="spinner" aria-hidden="true"></span><strong id="busyText">사진을 분석하고 있습니다</strong><small id="busyTime">0초</small></div>
+      </div>
+      <p class="hint">얼굴을 먼저 완성한 뒤 몸과 배경으로 이어지는 연필 크로키 영상입니다. 얼굴 위치가 틀리면 캔버스에서 얼굴을 클릭(휴대폰은 톡 누르기)하세요.</p>
+    </section>
+    <section class="controls settings" aria-label="영상 설정">
       <label>영상 길이 <output id="secondsLabel">20초</output><input id="seconds" type="range" min="4" max="20" value="20" /></label>
       <label>그림 스타일
         <select id="style">
@@ -29,7 +40,6 @@
       <label>선 진하기 <output id="darknessLabel">100%</output><input id="darkness" type="range" min="50" max="200" value="100" /></label>
       <label>그림자 해칭 양 <output id="strengthLabel">40%</output><input id="strength" type="range" min="0" max="100" value="40" /></label>
       <label class="check"><input id="intro" type="checkbox" checked /> 시작할 때 원본 사진 보여주기</label>
-      <label>손글씨 한 줄 <small class="note">그림 완성 후 빈 곳에 연필로 씁니다</small><input id="message" type="text" maxlength="24" placeholder="예) 오늘하루 행복하세요!" /></label>
       <label class="check"><input id="talk" type="checkbox" checked /> 마지막에 그림이 손글씨 문장을 말하기 (입 움직임)</label>
       <label class="check"><input id="signature" type="checkbox" checked /> 마지막에 서명 넣기 (David Lee.)</label>
       <label class="check"><input id="sound" type="checkbox" checked /> 연필 사각거리는 소리 넣기</label>
@@ -41,11 +51,6 @@
         </select>
       </label>
       <div class="actions"><button id="preview" type="button">미리보기</button><button id="export" type="button" class="primary">MP4 영상 저장</button></div>
-      <p id="status" role="status">사진을 선택하면 흑연 연필 초상화로 변환합니다.</p>
-    </section>
-    <section class="stage">
-      <canvas id="canvas" width="1080" height="1920" aria-label="연필 드로잉 미리보기"></canvas>
-      <p class="hint">얼굴을 먼저 완성한 뒤 몸과 배경으로 이어지는 연필 크로키 영상입니다. 얼굴 위치가 틀리면 캔버스에서 얼굴을 클릭(휴대폰은 톡 누르기)하세요.</p>
     </section>
   </main>
   <script src="app.js"></script>

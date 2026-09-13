@@ -1,10 +1,16 @@
 :root { color-scheme: dark; font-family: Inter, "Noto Sans KR", system-ui, sans-serif; background:#101116; color:#f4f1ea; }
 * { box-sizing:border-box; }
 body { margin:0; min-height:100vh; background:radial-gradient(circle at 20% 0,#2c2b34 0,transparent 36%),#101116; }
-main { width:min(1120px,calc(100% - 36px)); margin:0 auto; padding:52px 0 72px; display:grid; grid-template-columns:340px 1fr; gap:42px; align-items:start; }
+main { width:min(1120px,calc(100% - 36px)); margin:0 auto; padding:52px 0 72px; display:grid; grid-template-columns:340px 1fr; grid-template-rows:auto auto 1fr; column-gap:42px; row-gap:18px; align-items:start; }
+.quick { grid-column:1; grid-row:2; } .settings { grid-column:1; grid-row:3; } .stage { grid-column:2; grid-row:2 / span 2; }
+.canvas-wrap { position:relative; width:fit-content; max-width:100%; margin:0 auto; }
+.busy { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:22% !important; /* near the top, so it shows even when the canvas runs off a phone screen */ gap:12px; background:#101116b8; backdrop-filter:blur(3px); border-radius:4px; color:#f4f1ea; text-align:center; padding:20px; }
+.busy[hidden] { display:none; } .busy strong { font-size:1.05rem; line-height:1.45; white-space:pre-line; } .busy small { color:#e2bd80; font-variant-numeric:tabular-nums; }
+.spinner { width:46px; height:46px; border-radius:50%; border:4px solid #ffffff2a; border-top-color:#e2bd80; animation:spin .9s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
 .intro { grid-column:1/-1; margin-bottom:-10px; }.eyebrow { color:#e2bd80; letter-spacing:.16em; font-size:.72rem; font-weight:700; margin:0 0 8px; }
 h1 { font-size:clamp(1.8rem,4vw,3.2rem); letter-spacing:-.06em; margin:0 0 10px; } .intro>p:last-child { color:#b8bbc5; margin:0; }
-.controls { background:#1a1b22; border:1px solid #343640; border-radius:18px; padding:22px; display:grid; gap:20px; position:sticky; top:22px; }
+.controls { background:#1a1b22; border:1px solid #343640; border-radius:18px; padding:22px; display:grid; gap:20px; }
 .controls label { display:grid; gap:9px; color:#dcdee5; font-size:.88rem; }.controls output { float:right; color:#e2bd80; font-variant-numeric:tabular-nums; }
 .upload { cursor:pointer; border:1px dashed #686d7c; border-radius:12px; padding:17px; transition:.2s; }.upload:hover { border-color:#e2bd80; background:#22232c; }.upload span { font-weight:700; }.upload small { color:#9297a6; }
 #photo { position:absolute; width:1px; height:1px; opacity:0; } input[type="range"] { accent-color:#e2bd80; width:100%; } input[type="range"]:disabled { opacity:.4; } input[type="text"] { font:inherit; color:#eeeef2; background:#292b34; border:1px solid #595d6a; border-radius:10px; padding:10px 12px; } input[type="text"]:focus { outline:none; border-color:#e2bd80; } textarea { font:inherit; color:#eeeef2; background:#292b34; border:1px solid #595d6a; border-radius:10px; padding:10px 12px; resize:vertical; line-height:1.4; } textarea:focus { outline:none; border-color:#e2bd80; } .note { float:right; color:#8d929f; font-size:.72rem; } select { font:inherit; color:#eeeef2; background:#292b34; border:1px solid #595d6a; border-radius:10px; padding:10px 12px; }.check { display:flex !important; align-items:center; gap:9px !important; cursor:pointer; }.check input { accent-color:#e2bd80; width:17px; height:17px; }
@@ -12,9 +18,11 @@ h1 { font-size:clamp(1.8rem,4vw,3.2rem); letter-spacing:-.06em; margin:0 0 10px;
 #status { min-height:2.4em; margin:0; color:#aeb2bd; font-size:.78rem; line-height:1.5; }.stage { justify-self:center; width:100%; }.stage canvas { cursor:crosshair; touch-action:none; display:block; margin:0 auto; width:auto; max-width:100%; height:calc(100vh - 90px); min-height:520px; aspect-ratio:9/16; object-fit:contain; background:#6d4c33; border-radius:4px; box-shadow:0 22px 55px #0008; }.hint { color:#8d929f; font-size:.78rem; text-align:center; }
 @media(max-width:780px) {
   /* Phone: title, then the preview at full width, then the settings; play/save stay pinned to the bottom of the screen. */
-  main { display:flex; flex-direction:column; gap:18px; padding:22px 0 96px; }
-  .intro { margin:0; } h1 { font-size:1.7rem; } .intro>p:last-child { font-size:.85rem; }
-  .stage { order:1; } .controls { order:2; position:static; padding:18px; gap:18px; width:100%; min-width:0; }
+  main { display:flex; flex-direction:column; gap:14px; padding:18px 0 96px; }
+  .intro { margin:0; } .eyebrow { display:none; } h1 { font-size:1.45rem; margin:0; } .intro>p:last-child { display:none; }
+  .stage canvas { margin:0 auto; } .canvas-wrap { max-width:520px; margin:0 auto; }
+  .quick { order:1; } .stage { order:2; } .settings { order:3; } .controls { position:static; padding:18px; gap:16px; width:100%; min-width:0; }
+  .quick .upload { padding:13px 15px; } .quick textarea { min-height:0; } .stage .hint { margin:8px 0 0; }
   .controls > *, .controls label > * { min-width:0; max-width:100%; } textarea, input[type="text"], select { width:100%; }
   .stage canvas { width:100%; height:auto; min-height:0; max-width:520px; touch-action:pan-y; cursor:default; }
   .actions { position:fixed; left:0; right:0; bottom:0; z-index:10; padding:10px 14px calc(10px + env(safe-area-inset-bottom)); background:#15161ccc; backdrop-filter:blur(10px); border-top:1px solid #343640; }

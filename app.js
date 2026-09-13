@@ -2042,22 +2042,41 @@ function setBusy(busy) {
   preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy;
   strength.disabled = busy || styleSelect.value === 'line'; // shadow amount only matters when shading is drawn
 }
+// Busy overlay on the canvas while a photo is analysed: a spinner, the current step, and the elapsed seconds.
+const busyBox = document.querySelector('#busy'), busyText = document.querySelector('#busyText'), busyTime = document.querySelector('#busyTime');
+let busyTimer = 0, busyStart = 0;
+function showBusy(message) {
+  if (!busyBox) return;
+  busyText.textContent = message; preview.disabled = true; exportButton.disabled = true;
+  if (busyBox.hidden) {
+    busyBox.hidden = false; busyStart = performance.now(); clearInterval(busyTimer);
+    const tick = () => { busyTime.textContent = `${Math.floor((performance.now() - busyStart) / 1000)}초 경과 · 잠시만 기다려 주세요`; };
+    tick(); busyTimer = setInterval(tick, 500);
+  }
+}
+function hideBusy() { if (!busyBox) return; busyBox.hidden = true; clearInterval(busyTimer); preview.disabled = false; exportButton.disabled = false; }
+const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 30))); // let the overlay appear before heavy work
 let loadToken = 0;
 photoInput.addEventListener('change', event => {
   const file = event.target.files[0]; if (!file) return; const image = new Image(), token = ++loadToken;
   image.onload = async () => {
     stopPlayback(); source = image; analysis = null; plan = null; renderFrame(0); fileName.textContent = file.name;
-    status.textContent = detectorReady ? '사진에서 얼굴과 인물을 찾고 있습니다…' : '얼굴 인식 AI를 불러오는 중입니다… (처음 한 번만 조금 걸립니다)';
-    await new Promise(resolve => setTimeout(resolve, 30));
-    const result = await analyzePhoto(image);
-    if (token !== loadToken) return;
-    if (styleSelect.value === 'ai') {
-      status.textContent = 'AI가 사진을 선화로 옮기고 있습니다… (사진 한 장에 10초 안팎, 처음에는 모델도 받습니다)';
-      await new Promise(resolve => setTimeout(resolve, 30));
-      await ensureLineArt(result);
+    const step1 = detectorReady ? '얼굴과 인물을 찾고 있습니다' : '얼굴 인식 AI를 불러오는 중입니다\n(처음 한 번만 조금 걸립니다)';
+    status.textContent = step1.replace('\n', ' '); showBusy(step1); await nextPaint();
+    try {
+      const result = await analyzePhoto(image);
       if (token !== loadToken) return;
-    }
-    analysis = result; rebuild();
+      if (styleSelect.value === 'ai') {
+        const step2 = 'AI가 사진을 선화로 옮기는 중입니다\n(휴대폰은 1분 가까이 걸릴 수 있어요)';
+        status.textContent = step2.replace('\n', ' '); showBusy(step2); await nextPaint();
+        await ensureLineArt(result);
+        if (token !== loadToken) return;
+      }
+      showBusy('연필 획을 계획하고 있습니다'); await nextPaint();
+      analysis = result; rebuild();
+    } catch (error) {
+      console.error(error); status.textContent = '사진을 처리하지 못했습니다. 다른 사진으로 다시 시도해 주세요.';
+    } finally { if (token === loadToken) hideBusy(); }
   };
   image.src = URL.createObjectURL(file);
 });
@@ -2094,8 +2113,8 @@ styleSelect.addEventListener('change', async () => {
   stopPlayback(); preview.textContent = '미리보기'; setBusy(false);
   if (styleSelect.value === 'ai' && analysis && !analysis.ai && !analysis.aiFailed) {
     const target = analysis; setBusy(true);
-    status.textContent = 'AI가 사진을 선화로 옮기고 있습니다… (사진 한 장에 10초 안팎)';
-    await ensureLineArt(target); setBusy(false);
+    status.textContent = 'AI가 사진을 선화로 옮기고 있습니다…'; showBusy('AI가 사진을 선화로 옮기는 중입니다'); await nextPaint();
+    await ensureLineArt(target); setBusy(false); hideBusy();
     if (analysis !== target) return;
   }
   rebuild();
@@ -2119,8 +2138,13 @@ volume.addEventListener('input', () => { document.querySelector('#volumeLabel').
 // Start fetching the models early so the first photo is quick.
 loadFaceDetector().catch(() => {}); loadSegmenter().catch(() => {}); loadLandmarkers().catch(() => {}); loadObjectSegmenter().catch(() => {});
 if (styleSelect.value === 'ai') loadLineArt().catch(() => {});
+function scrollToCanvas() { // bring the whole canvas into view, with its top at the top of the screen
+  // Wait a frame: the status line above the canvas changes length when playback starts, which moves the canvas.
+  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector('.canvas-wrap')?.scrollIntoView({ behavior:'smooth', block:'start' })));
+}
 preview.addEventListener('click', async () => {
   if (!plan) return;
+  scrollToCanvas();
   if (session) { stopPlayback(); preview.textContent = '미리보기'; renderFrame(plan.totalMs); return; }
   preview.textContent = '정지'; status.textContent = '연필로 한 획씩 스케치하고 있습니다…';
   await play({ onDone:() => { preview.textContent = '미리보기'; status.textContent = '연필 스케치가 완성되었습니다.'; } });
@@ -2131,32 +2155,136 @@ const RECORD_TYPES = {
   webm: { audio:['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'], silent:['video/webm;codecs=vp9', 'video/webm'] },
 };
 const supportedType = (format, withAudio) => window.MediaRecorder && RECORD_TYPES[format][withAudio ? 'audio' : 'silent'].find(type => MediaRecorder.isTypeSupported(type));
-for (const option of formatSelect.options) { // grey out a format this browser cannot record
-  if (!supportedType(option.value, true) && !supportedType(option.value, false)) { option.disabled = true; option.textContent += ' — 이 브라우저 미지원'; }
+for (const option of formatSelect.options) { // grey out a format this browser can neither build nor record
+  if (!window.VideoEncoder && !supportedType(option.value, true) && !supportedType(option.value, false)) { option.disabled = true; option.textContent += ' — 이 브라우저 미지원'; }
 }
 if (formatSelect.selectedOptions[0]?.disabled) formatSelect.value = [...formatSelect.options].find(o => !o.disabled)?.value ?? 'webm';
 const updateExportLabel = () => { exportButton.textContent = `${formatSelect.value.toUpperCase()} 영상 저장`; };
 formatSelect.addEventListener('change', updateExportLabel); updateExportLabel();
-exportButton.addEventListener('click', async () => {
-  if (!plan || !window.MediaRecorder) return;
-  setBusy(true); preview.textContent = '미리보기';
-  await ensureTitleFont(); // never record a first frame with fallback glyphs in the title
-  const withAudio = soundToggle.checked && sound.ensure(), wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
+function saveVideo(blob, ext, wanted) {
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  const d = new Date(), pad = v => String(v).padStart(2, '0'), stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  link.href = url; link.download = `pencil-sketch-${stamp}.${ext}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const where = /Android/i.test(navigator.userAgent) ? ' 휴대폰의 "다운로드" 폴더(내 파일 → 다운로드)에 저장됩니다. 편집 앱에서 불러오세요.' : '';
+  status.textContent = (ext === wanted ? `${ext.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 저장을 지원하지 않아 ${ext.toUpperCase()}로 저장했습니다.`) + where;
+}
+
+// The video is built frame by frame (WebCodecs) rather than recorded off the screen in real time. A recording on a phone
+// can stutter, drop frames or end up with a length that editing apps misread (a 20s clip opened as 3s); a built file is
+// always exactly as long as the drawing, every frame is there, and the pencil sound is rendered offline in sync.
+const FPS = 30, VIDEO_BITRATE = 10_000_000, AUDIO_RATE = 48000;
+const MUXERS = {
+  mp4: { src:'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js', global:'Mp4Muxer',
+    video:[['avc1.640028', 'avc'], ['avc1.4d0028', 'avc'], ['avc1.42e028', 'avc'], ['avc1.42002a', 'avc']], audio:[['mp4a.40.2', 'aac'], ['opus', 'opus']] },
+  webm: { src:'https://cdn.jsdelivr.net/npm/webm-muxer@5.1.4/build/webm-muxer.min.js', global:'WebMMuxer',
+    video:[['vp09.00.40.08', 'V_VP9'], ['vp8', 'V_VP8']], audio:[['opus', 'A_OPUS']] },
+};
+async function pickEncoders(format, withAudio) {
+  if (!window.VideoEncoder || !window.VideoFrame || (withAudio && (!window.AudioEncoder || !window.OfflineAudioContext))) return null;
+  const supported = async (Encoder, config) => { try { return (await Encoder.isConfigSupported(config)).supported; } catch { return false; } };
+  let video = null, audio = null;
+  for (const [codec, mux] of MUXERS[format].video) {
+    const config = { codec, width:VIEW_W, height:VIEW_H, bitrate:VIDEO_BITRATE, framerate:FPS, ...(mux === 'avc' ? { avc:{ format:'avc' } } : {}) };
+    if (await supported(VideoEncoder, config)) { video = { config, mux }; break; }
+  }
+  if (!video) return null;
+  if (withAudio) {
+    search: for (const [codec, mux] of MUXERS[format].audio) for (const numberOfChannels of [2, 1]) {
+      const config = { codec, sampleRate:AUDIO_RATE, numberOfChannels, bitrate:128000 };
+      if (await supported(AudioEncoder, config)) { audio = { config, mux }; break search; }
+    }
+    if (!audio) return null;
+  }
+  return { video, audio };
+}
+async function encodePencilAudio(config, seconds) {
+  // The same pencil voice as the preview, rendered offline, then compressed into chunks kept for interleaving with the frames.
+  const channels = config.numberOfChannels, oac = new OfflineAudioContext(channels, Math.ceil(seconds * AUDIO_RATE), AUDIO_RATE);
+  scheduleStrokes(createPencilVoice(oac, oac.destination), plan.audio, 0);
+  const buffer = await oac.startRendering(), chunks = []; let failure = null;
+  const encoder = new AudioEncoder({ output:(chunk, meta) => chunks.push({ chunk, meta }), error:e => { failure = e; } });
+  encoder.configure(config);
+  for (let offset = 0, step = AUDIO_RATE / 10; offset < buffer.length; offset += step) {
+    const length = Math.min(step, buffer.length - offset), data = new Float32Array(length * channels);
+    for (let c = 0; c < channels; c++) data.set(buffer.getChannelData(Math.min(c, buffer.numberOfChannels - 1)).subarray(offset, offset + length), c * length);
+    const audioData = new AudioData({ format:'f32-planar', sampleRate:AUDIO_RATE, numberOfFrames:length, numberOfChannels:channels, timestamp:Math.round(offset / AUDIO_RATE * 1e6), data });
+    encoder.encode(audioData); audioData.close();
+  }
+  await encoder.flush(); encoder.close();
+  if (failure) throw failure;
+  return chunks;
+}
+const yieldToPage = () => new Promise(resolve => { const channel = new MessageChannel(); channel.port1.onmessage = () => resolve(); channel.port2.postMessage(0); }); // not throttled like setTimeout
+async function buildVideo(format, encoders, onProgress) {
+  const spec = MUXERS[format];
+  if (!window[spec.global]) await withTimeout(loadScript(spec.src), 30000);
+  const { Muxer, ArrayBufferTarget } = window[spec.global], { video, audio } = encoders;
+  const frames = Math.ceil((plan.totalMs + 300) / 1000 * FPS), seconds = frames / FPS; // hold the finished drawing a moment at the end
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target, firstTimestampBehavior:'offset', ...(format === 'mp4' ? { fastStart:'in-memory' } : {}),
+    video:{ codec:video.mux, width:VIEW_W, height:VIEW_H, frameRate:FPS },
+    ...(audio ? { audio:{ codec:audio.mux, numberOfChannels:audio.config.numberOfChannels, sampleRate:AUDIO_RATE } } : {}),
+  });
+  const sounds = audio ? await encodePencilAudio(audio.config, seconds) : [];
+  let nextSound = 0, failure = null;
+  const addSoundUntil = time => { while (nextSound < sounds.length && sounds[nextSound].chunk.timestamp <= time) { const { chunk, meta } = sounds[nextSound++]; muxer.addAudioChunk(chunk, meta); } };
+  const encoder = new VideoEncoder({ output:(chunk, meta) => { addSoundUntil(chunk.timestamp); muxer.addVideoChunk(chunk, meta); }, error:e => { failure = e; } });
+  encoder.configure(video.config);
+  resetInk();
+  for (let i = 0; i < frames; i++) {
+    if (failure) throw failure;
+    renderFrame(Math.min(i * 1000 / FPS, plan.totalMs)); // frames in order: the ink builds up incrementally
+    const frame = new VideoFrame(canvas, { timestamp:Math.round(i * 1e6 / FPS), duration:Math.round(1e6 / FPS) });
+    encoder.encode(frame, { keyFrame:i % (FPS * 2) === 0 }); frame.close();
+    while (encoder.encodeQueueSize > 4 && !failure) await new Promise(resolve => { encoder.addEventListener('dequeue', resolve, { once:true }); setTimeout(resolve, 30); });
+    if (i % 3 === 0) { onProgress(i / frames); await yieldToPage(); }
+  }
+  await encoder.flush(); encoder.close();
+  if (failure) throw failure;
+  addSoundUntil(Infinity); muxer.finalize();
+  return new Blob([target.buffer], { type:`video/${format}` });
+}
+async function recordRealtime(wanted, other) {
+  // Fallback for browsers without WebCodecs: record the canvas while the drawing plays.
+  const withAudio = soundToggle.checked && sound.ensure();
   const tracks = [...canvas.captureStream(30).getVideoTracks(), ...(withAudio ? sound.stream.stream.getAudioTracks() : [])];
   const mimeType = supportedType(wanted, withAudio) || supportedType(other, withAudio);
-  const recorder = new MediaRecorder(new MediaStream(tracks), { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond:10_000_000 }); // 1080×1920 needs a generous bitrate for crisp graphite
+  const recorder = new MediaRecorder(new MediaStream(tracks), { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond:VIDEO_BITRATE }); // 1080×1920 needs a generous bitrate for crisp graphite
   const actual = (recorder.mimeType || mimeType || '').includes('mp4') ? 'mp4' : 'webm';
   const parts = []; recorder.ondataavailable = event => event.data.size && parts.push(event.data);
-  recorder.onstop = () => {
-    const url = URL.createObjectURL(new Blob(parts, { type:`video/${actual}` })), link = document.createElement('a');
-    const d = new Date(), pad = v => String(v).padStart(2, '0'), stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-    link.href = url; link.download = `pencil-sketch-${stamp}.${actual}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
-    setBusy(false);
-    const where = /Android/i.test(navigator.userAgent) ? ' 휴대폰의 "다운로드" 폴더(내 파일 → 다운로드)에 저장됩니다. 편집 앱에서 불러오세요.' : '';
-    status.textContent = (actual === wanted ? `${actual.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 녹화를 지원하지 않아 ${actual.toUpperCase()}로 저장했습니다.`) + where;
-  };
+  const stopped = new Promise(resolve => { recorder.onstop = resolve; });
   status.textContent = `${actual.toUpperCase()} 영상을 녹화하고 있습니다… 녹화 중에는 이 탭을 계속 띄워 두세요.`;
-  renderFrame(0); recorder.start(250);
+  renderFrame(0); recorder.start();
   await play({ onDone:() => setTimeout(() => recorder.stop(), 250) });
+  await stopped;
+  saveVideo(new Blob(parts, { type:`video/${actual}` }), actual, wanted);
+}
+exportButton.addEventListener('click', async () => {
+  if (!plan) return;
+  scrollToCanvas();
+  stopPlayback(); setBusy(true); preview.textContent = '미리보기';
+  await ensureTitleFont(); // never put a first frame with fallback glyphs in the title
+  const withAudio = soundToggle.checked, wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
+  const token = session = {}; keepAwake(true); // `session` keeps still-preview redraws from touching the canvas mid-build
+  try {
+    let format = wanted, encoders = await pickEncoders(wanted, withAudio);
+    if (!encoders) { format = other; encoders = await pickEncoders(other, withAudio); }
+    if (encoders) {
+      status.textContent = '영상을 한 장씩 만들고 있습니다… 잠시만 기다려 주세요.';
+      const blob = await buildVideo(format, encoders, share => {
+        const percent = Math.floor(share * 100); exportButton.textContent = `영상 만드는 중 ${percent}%`;
+        status.textContent = `영상을 한 장씩 만들고 있습니다… ${percent}%`;
+      });
+      saveVideo(blob, format, wanted);
+    } else if (window.MediaRecorder) {
+      session = null; await recordRealtime(wanted, other);
+    } else status.textContent = '이 브라우저는 영상 저장을 지원하지 않습니다. 크롬에서 열어 주세요.';
+  } catch (error) {
+    console.error(error); status.textContent = `영상을 만들지 못했습니다. 다시 시도해 주세요. (${error?.message ?? error})`;
+  } finally {
+    if (session === token) session = null;
+    keepAwake(false); setBusy(false); updateExportLabel(); resetInk(); renderFrame(plan.totalMs);
+  }
 });
 renderFrame(0);
