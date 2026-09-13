@@ -2057,10 +2057,15 @@ function showBusy(message) {
 function hideBusy() { if (!busyBox) return; busyBox.hidden = true; clearInterval(busyTimer); preview.disabled = false; exportButton.disabled = false; }
 const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 30))); // let the overlay appear before heavy work
 let loadToken = 0;
+const uploadBox = document.querySelector('.upload');
 photoInput.addEventListener('change', event => {
   const file = event.target.files[0]; if (!file) return; const image = new Image(), token = ++loadToken;
+  // Say so at once, right in the picker the user just tapped: a large phone photo takes a moment even to open.
+  uploadBox.classList.add('loading'); fileName.textContent = '이미지 분석중...'; status.textContent = '이미지 분석중...'; showBusy('이미지 분석중...');
+  const settle = () => { if (token !== loadToken) return; uploadBox.classList.remove('loading'); fileName.textContent = file.name; };
+  image.onerror = () => { if (token !== loadToken) return; settle(); hideBusy(); status.textContent = '사진을 열 수 없습니다. JPG, PNG, WEBP 사진을 선택해 주세요.'; };
   image.onload = async () => {
-    stopPlayback(); source = image; analysis = null; plan = null; renderFrame(0); fileName.textContent = file.name;
+    stopPlayback(); source = image; analysis = null; plan = null; renderFrame(0);
     const step1 = detectorReady ? '얼굴과 인물을 찾고 있습니다' : '얼굴 인식 AI를 불러오는 중입니다\n(처음 한 번만 조금 걸립니다)';
     status.textContent = step1.replace('\n', ' '); showBusy(step1); await nextPaint();
     try {
@@ -2076,7 +2081,7 @@ photoInput.addEventListener('change', event => {
       analysis = result; rebuild();
     } catch (error) {
       console.error(error); status.textContent = '사진을 처리하지 못했습니다. 다른 사진으로 다시 시도해 주세요.';
-    } finally { if (token === loadToken) hideBusy(); }
+    } finally { if (token === loadToken) { settle(); hideBusy(); } }
   };
   image.src = URL.createObjectURL(file);
 });
