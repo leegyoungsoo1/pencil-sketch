@@ -676,7 +676,8 @@ async function segmentObjects(base) {
 }
 async function makeLineMap(base) {
   // AI line drawing of exactly the analysed framing, returned as graphite darkness (0..1) on the analysis grid.
-  const session = await withTimeout(loadLineArt(), 120000), img = base.image, cr = base.crop, long = 768;
+  // Phones with little memory get a lighter pass; everything with 6 GB or more (e.g. a Galaxy S23) keeps full detail.
+  const session = await withTimeout(loadLineArt(), 120000), img = base.image, cr = base.crop, long = (navigator.deviceMemory ?? 8) <= 4 ? 512 : 768;
   const s = long / Math.max(cr.w, cr.h), w = Math.max(8, Math.round(cr.w * s / 8) * 8), h = Math.max(8, Math.round(cr.h * s / 8) * 8);
   const input = document.createElement('canvas'); input.width = w; input.height = h;
   const ictx = input.getContext('2d', { willReadFrequently:true }); ictx.drawImage(img, cr.x, cr.y, cr.w, cr.h, 0, 0, w, h);
@@ -1988,9 +1989,16 @@ const sound = {
 };
 
 // ───────────────────────── playback, export & UI ─────────────────────────
-function stopPlayback() { cancelAnimationFrame(raf); sound.silence(); session = null; }
+function stopPlayback() { cancelAnimationFrame(raf); sound.silence(); session = null; keepAwake(false); }
+let wakeLock = null;
+async function keepAwake(on) { // keep a phone's screen on while playing or recording — a sleeping screen stops the recording
+  try {
+    if (on && !wakeLock && navigator.wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+    else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}
+}
 async function play({ onDone }) {
-  stopPlayback(); resetInk();
+  stopPlayback(); resetInk(); keepAwake(true);
   const useAudio = soundToggle.checked && sound.ensure();
   let clock;
   if (useAudio) {
@@ -2002,7 +2010,7 @@ async function play({ onDone }) {
   const tick = () => {
     if (session !== token) return;
     const t = clock(); renderFrame(clamp(t, 0, plan.totalMs));
-    if (t < plan.totalMs) raf = requestAnimationFrame(tick); else { session = null; onDone(); }
+    if (t < plan.totalMs) raf = requestAnimationFrame(tick); else { session = null; keepAwake(false); onDone(); }
   };
   raf = requestAnimationFrame(tick);
   return useAudio;
@@ -2062,15 +2070,19 @@ const canvasPoint = event => { // screen → video frame → sheet coordinates
 const dragBox = (a, z) => ({ x:(a.x + z.x) / 2, y:(a.y + z.y) / 2, rx:Math.abs(z.x - a.x) / 2, ry:Math.abs(z.y - a.y) / 2 });
 canvas.addEventListener('pointerdown', event => {
   if (!plan || session || exportButton.disabled) return;
-  drag = canvasPoint(event); try { canvas.setPointerCapture(event.pointerId); } catch {}
+  drag = canvasPoint(event);
+  // On a touch screen the finger must stay free to scroll the page: a tap moves the face, a swipe just scrolls.
+  if (event.pointerType === 'touch') drag.touch = true; else try { canvas.setPointerCapture(event.pointerId); } catch {}
 });
+canvas.addEventListener('pointercancel', () => { drag = null; }); // the browser took the gesture over for scrolling
 canvas.addEventListener('pointermove', event => {
-  if (!drag) return; const p = canvasPoint(event);
+  if (!drag || drag.touch) return; const p = canvasPoint(event);
   if (Math.hypot(p.x - drag.x, p.y - drag.y) < 10) return;
   renderFrame(plan.totalMs); drawFaceGuide(dragBox(drag, p));
 });
 canvas.addEventListener('pointerup', event => {
   if (!drag) return; const start = drag, p = canvasPoint(event), { b, face } = analysis; drag = null;
+  if (start.touch && Math.hypot(p.x - start.x, p.y - start.y) >= 10) return; // it was a swipe, not a tap
   const box = Math.hypot(p.x - start.x, p.y - start.y) < 10 ? { x:p.x, y:p.y, rx:face.rx, ry:face.ry } : dragBox(start, p);
   const next = shiftFace(face, { x:clamp(box.x - b.x, 0, b.w), y:clamp(box.y - b.y, 0, b.h), rx:Math.max(18, box.rx), ry:Math.max(22, box.ry), source:'manual' });
   status.textContent = '지정한 얼굴 위치로 다시 분석하고 있습니다…';
@@ -2137,9 +2149,11 @@ exportButton.addEventListener('click', async () => {
   const parts = []; recorder.ondataavailable = event => event.data.size && parts.push(event.data);
   recorder.onstop = () => {
     const url = URL.createObjectURL(new Blob(parts, { type:`video/${actual}` })), link = document.createElement('a');
-    link.href = url; link.download = `pencil-sketch.${actual}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1500);
+    const d = new Date(), pad = v => String(v).padStart(2, '0'), stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    link.href = url; link.download = `pencil-sketch-${stamp}.${actual}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
     setBusy(false);
-    status.textContent = actual === wanted ? `${actual.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 녹화를 지원하지 않아 ${actual.toUpperCase()}로 저장했습니다.`;
+    const where = /Android/i.test(navigator.userAgent) ? ' 휴대폰의 "다운로드" 폴더(내 파일 → 다운로드)에 저장됩니다. 편집 앱에서 불러오세요.' : '';
+    status.textContent = (actual === wanted ? `${actual.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 녹화를 지원하지 않아 ${actual.toUpperCase()}로 저장했습니다.`) + where;
   };
   status.textContent = `${actual.toUpperCase()} 영상을 녹화하고 있습니다… 녹화 중에는 이 탭을 계속 띄워 두세요.`;
   renderFrame(0); recorder.start(250);
