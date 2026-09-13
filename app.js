@@ -1563,7 +1563,7 @@ function createPencilVoice(ac, destination) {
   const src = ac.createBufferSource(); src.buffer = buffer; src.loop = true;
   const filter = (type, f, q, gain = 0) => { const node = ac.createBiquadFilter(); node.type = type; node.frequency.value = f; node.Q.value = q; node.gain.value = gain; return node; };
   const color = filter('peaking', 2200, 1.1, 6), env = ac.createGain(), out = ac.createGain();
-  env.gain.value = 0; out.gain.value = volumeGain(Number(volume?.value ?? 30));
+  env.gain.value = 0; out.gain.value = volumeGain(Number(volume?.value ?? 20));
   src.connect(filter('highpass', 700, .7)).connect(filter('lowpass', 5500, .6)).connect(color).connect(env).connect(out).connect(destination);
   src.start();
   return { env, color, out };
