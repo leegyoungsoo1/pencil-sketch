@@ -19,14 +19,21 @@
       <label>영상 길이 <output id="secondsLabel">20초</output><input id="seconds" type="range" min="4" max="20" value="20" /></label>
       <label>그림 스타일
         <select id="style">
+          <option value="line" selected>선만 (크로키)</option>
           <option value="shade">선 + 그림자 살짝</option>
-          <option value="line">선만 (크로키)</option>
         </select>
       </label>
-      <label>그림자 양 <output id="strengthLabel">50%</output><input id="strength" type="range" min="0" max="100" value="50" /></label>
+      <label>선 진하기 <output id="darknessLabel">130%</output><input id="darkness" type="range" min="50" max="200" value="130" /></label>
+      <label>그림자 양 <output id="strengthLabel">50%</output><input id="strength" type="range" min="0" max="100" value="50" disabled /></label>
       <label class="check"><input id="sound" type="checkbox" checked /> 연필 사각거리는 소리 넣기</label>
       <label>연필 소리 크기 <output id="volumeLabel">30%</output><input id="volume" type="range" min="0" max="100" value="30" /></label>
-      <div class="actions"><button id="preview" type="button">미리보기</button><button id="export" type="button" class="primary">WebM 영상 저장</button></div>
+      <label>저장 형식
+        <select id="format">
+          <option value="mp4" selected>MP4 (대부분의 플레이어·편집 프로그램)</option>
+          <option value="webm">WebM</option>
+        </select>
+      </label>
+      <div class="actions"><button id="preview" type="button">미리보기</button><button id="export" type="button" class="primary">MP4 영상 저장</button></div>
       <p id="status" role="status">사진을 선택하면 흑연 연필 초상화로 변환합니다.</p>
     </section>
     <section class="stage">

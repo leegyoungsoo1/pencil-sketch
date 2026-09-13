@@ -4,6 +4,8 @@ const photoInput = document.querySelector('#photo');
 const seconds = document.querySelector('#seconds');
 const strength = document.querySelector('#strength');
 const styleSelect = document.querySelector('#style');
+const darkness = document.querySelector('#darkness');
+const formatSelect = document.querySelector('#format');
 const soundToggle = document.querySelector('#sound');
 const volume = document.querySelector('#volume');
 const preview = document.querySelector('#preview');
@@ -18,7 +20,7 @@ const KIND = {
   construct: { speed:1.9, lift:26, overhead:8 },
   contour:   { speed:1.0, lift:30, overhead:8 },
   hatch:     { speed:3.6, lift:22, overhead:4 },
-  fill:      { speed:1.4, lift:28, overhead:8 },
+  fill:      { speed:1.4, lift:28, overhead:3 },
   accent:    { speed:0.9, lift:34, overhead:8 },
 };
 const strokeCost = (kind, len) => len / KIND[kind].speed + KIND[kind].overhead;
@@ -50,6 +52,39 @@ function boxBlur(src, w, h, r) {
   return out;
 }
 const blur = (src, w, h, r) => boxBlur(boxBlur(src, w, h, r), w, h, r);
+// Feature-zone flags (one byte per pixel) and their bit positions for per-stroke fractions.
+const Z = { BROW:1, EYE:2, IRIS:4, LIPS:8, NOSE:16, BRIDGE:32, HAND:64, JAW:128 };
+const ZB = { BROW:0, EYE:1, IRIS:2, LIPS:3, NOSE:4, BRIDGE:5, HAND:6, JAW:7 };
+// Geometry for landmark regions (all in analysis-grid pixels).
+const centroid = pts => ({ x:pts.reduce((a, p) => a + p.x, 0) / pts.length, y:pts.reduce((a, p) => a + p.y, 0) / pts.length });
+function convexHull(points) { // monotone chain
+  const pts = points.slice().sort((a, z) => a.x - z.x || a.y - z.y), cross = (o, a, z) => (a.x - o.x) * (z.y - o.y) - (a.y - o.y) * (z.x - o.x);
+  const half = list => { const out = []; for (const p of list) { while (out.length > 1 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop(); out.push(p); } out.pop(); return out; };
+  return pts.length < 3 ? pts : [...half(pts), ...half(pts.slice().reverse())];
+}
+function insidePolygon(poly, x, y) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+function segmentDistance(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, t = clamp(((px - a.x) * dx + (py - a.y) * dy) / (dx * dx + dy * dy || 1));
+  return Math.hypot(px - a.x - dx * t, py - a.y - dy * t);
+}
+function paintPolygon(zone, gw, gh, poly, flag, grow = 0) {
+  const xs = poly.map(p => p.x), ys = poly.map(p => p.y);
+  const x0 = Math.max(0, Math.floor(Math.min(...xs) - grow)), x1 = Math.min(gw - 1, Math.ceil(Math.max(...xs) + grow));
+  const y0 = Math.max(0, Math.floor(Math.min(...ys) - grow)), y1 = Math.min(gh - 1, Math.ceil(Math.max(...ys) + grow));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    let hit = insidePolygon(poly, x, y);
+    for (let k = 0; !hit && grow > 0 && k < poly.length; k++) hit = segmentDistance(x, y, poly[k], poly[(k + 1) % poly.length]) <= grow;
+    if (hit) zone[y * gw + x] |= flag;
+  }
+}
+function paintCapsule(zone, gw, gh, a, b, radius, flag) { paintPolygon(zone, gw, gh, [a, b], flag, radius); }
 function percentile(values, p, step = 7) {
   const sample = []; for (let i = 0; i < values.length; i += step) sample.push(values[i]);
   sample.sort((a, b) => a - b); return sample[Math.floor(clamp(p) * (sample.length - 1))];
@@ -156,23 +191,54 @@ async function analyzePhoto(img) {
     face = refound.source === 'ai' ? refound : { ...face, ...toCrop(face), rx:face.rx * s0 * k, ry:face.ry * s0 * k, eyes:face.eyes?.map(toCrop) ?? null };
     base = zoomed;
   }
-  base.person = await segmentPerson(base);
+  [base.person, base.marks] = await Promise.all([segmentPerson(base), detectLandmarks(base)]);
+  const mesh = base.marks?.mesh;
+  if (mesh && face.source === 'ai') {
+    // The mesh's face oval is tighter and follows head tilt better than the detector box; irises are exact eye centres.
+    const oval = base.marks.parts.oval.map(c => mesh[c.start]), xs = oval.map(p => p.x), ys = oval.map(p => p.y);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), centre = ids => centroid(ids.map(i => mesh[i]));
+    face = { ...face, x:(x0 + x1) / 2, y:(y0 + y1) / 2, rx:(x1 - x0) / 2 * 1.02, ry:(y1 - y0) / 2 * 1.04, eyes:[centre(base.marks.parts.irisL), centre(base.marks.parts.irisR)] };
+  }
   return analyzeFace(base, face);
 }
 function analyzeFace(base, face) { // everything that depends on where the face is; re-run when the user corrects it
   const { b, gw, gh, n, soft, softValue, b1, b2, b4 } = base;
-  const faceW = new Float32Array(n), far = new Float32Array(n), subject = new Float32Array(n), head = new Uint8Array(n), eyeW = new Float32Array(n), core = [];
+  // Feature zones from the face mesh and hand landmarks: each pixel carries flags for the part it belongs to.
+  const zone = new Uint8Array(n), marks = base.marks, mesh = marks?.mesh;
+  if (mesh) {
+    const P = ids => ids.map(i => mesh[i]), { parts } = marks;
+    const eyeGap = Math.hypot(centroid(P(parts.irisL)).x - centroid(P(parts.irisR)).x, centroid(P(parts.irisL)).y - centroid(P(parts.irisR)).y) || face.rx;
+    for (const ids of [parts.browL, parts.browR]) paintPolygon(zone, gw, gh, convexHull(P(ids)), Z.BROW, eyeGap * .03);
+    for (const ids of [parts.eyeL, parts.eyeR]) paintPolygon(zone, gw, gh, convexHull(P(ids)), Z.EYE, eyeGap * .05);
+    for (const ids of [parts.irisL, parts.irisR]) paintPolygon(zone, gw, gh, convexHull(P(ids)), Z.IRIS, 1);
+    paintPolygon(zone, gw, gh, convexHull(P(parts.lips)), Z.LIPS, eyeGap * .04);
+    paintPolygon(zone, gw, gh, convexHull(P([1, 2, 4, 98, 327, 129, 358, 115, 344])), Z.NOSE, eyeGap * .05); // tip, wings, nostrils
+    paintCapsule(zone, gw, gh, mesh[168], mesh[5], eyeGap * .2, Z.BRIDGE);
+    for (const c of parts.oval) paintCapsule(zone, gw, gh, mesh[c.start], mesh[c.end], eyeGap * .06, Z.JAW);
+  }
+  for (const hand of marks?.hands ?? []) {
+    const palm = Math.hypot(hand[5].x - hand[17].x, hand[5].y - hand[17].y) || 20;
+    paintPolygon(zone, gw, gh, convexHull([0, 1, 2, 5, 9, 13, 17].map(i => hand[i])), Z.HAND, palm * .25);
+    for (const c of marks.bones) paintCapsule(zone, gw, gh, hand[c.start], hand[c.end], palm * .2, Z.HAND);
+  }
+  const handRaw = new Float32Array(n), eyeRaw = new Float32Array(n);
+  for (let i = 0; i < n; i++) { handRaw[i] = zone[i] & Z.HAND ? 1 : 0; eyeRaw[i] = zone[i] & (Z.EYE | Z.IRIS) ? 1 : 0; }
+  const handW = blur(handRaw, gw, gh, 3), meshEyes = mesh ? blur(eyeRaw, gw, gh, 2) : null;
+
+  const faceW = new Float32Array(n), far = new Float32Array(n), subject = new Float32Array(n), head = new Uint8Array(n), eyeW = new Float32Array(n), detail = new Float32Array(n), core = [];
   const eyes = face.eyes ?? [];
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
     const i = y * gw + x, d = Math.hypot((x - face.x) / face.rx, (y - face.y) / face.ry);
     faceW[i] = clamp(1 - (d - 1) / .45);
     // Eye zones (lids, lashes, iris) — where likeness lives, so they get extra care.
-    for (const e of eyes) eyeW[i] = Math.max(eyeW[i], clamp(1 - (Math.hypot((x - e.x) / (face.rx * .3), (y - e.y) / (face.ry * .16)) - .7) / .5));
+    if (meshEyes) eyeW[i] = clamp(meshEyes[i] * 1.6);
+    else for (const e of eyes) eyeW[i] = Math.max(eyeW[i], clamp(1 - (Math.hypot((x - e.x) / (face.rx * .3), (y - e.y) / (face.ry * .16)) - .7) / .5));
+    detail[i] = Math.max(faceW[i], clamp(handW[i] * 1.5)); // faces and hands get the fine treatment
     head[i] = Math.hypot((x - face.x) / (face.rx * 1.7), (y - face.y) / (face.ry * 1.5)) < 1 ? 1 : 0;
-    // Detail fades away from the subject, but the body below the face stays important.
+    // Detail fades away from the subject, but the body below the face stays important — and hands never fade.
     const below = y > face.y ? .55 : 1;
-    far[i] = clamp((Math.hypot((x - face.x) / (face.rx * 2.6), (y - face.y) / (face.ry * 4 / below)) - .6) / 1.2);
-    if (base.person) subject[i] = Math.max(base.person[i], faceW[i]);
+    far[i] = clamp((Math.hypot((x - face.x) / (face.rx * 2.6), (y - face.y) / (face.ry * 4 / below)) - .6) / 1.2) * (1 - clamp(handW[i] * 1.5));
+    if (base.person) subject[i] = Math.max(base.person[i], faceW[i], clamp(handW[i] * 1.5));
     else { // no segmentation model: assume a head with hair plus shoulders widening below it
       const headShape = clamp(1 - (Math.hypot((x - face.x) / (face.rx * 1.35), (y - face.y) / (face.ry * 1.3)) - 1) / .3);
       const top = face.y + face.ry * .7, halfWidth = face.rx * (1.1 + Math.max(0, y - top) / face.ry * 1.6);
@@ -185,21 +251,22 @@ function analyzeFace(base, face) { // everything that depends on where the face 
 
   // Line field (difference of Gaussians): strong on dark lines and the dark side of crisp edges,
   // weak on soft shading — so cheek and nose shadows become tone instead of wrinkle-like lines.
-  const faceDog = new Float32Array(n), bodyDog = new Float32Array(n), faceSample = [];
+  // Hands use the same fine field, normalised by their own contrast: finger-against-finger edges are faint skin-on-skin.
+  const faceDog = new Float32Array(n), bodyDog = new Float32Array(n), faceSample = [], handSample = [];
   for (let i = 0; i < n; i++) {
     faceDog[i] = Math.max(0, b2[i] - b1[i] + (b4[i] - b2[i]) * .5); bodyDog[i] = Math.max(0, b4[i] - b2[i]);
-    if (faceW[i] > .5 && i % 5 === 0) faceSample.push(faceDog[i]);
+    if (i % 5 === 0) { if (faceW[i] > .5) faceSample.push(faceDog[i]); else if (handW[i] > .5) handSample.push(faceDog[i]); }
   }
-  faceSample.sort((a, z) => a - z);
-  const nf = Math.max(4, faceSample.length ? faceSample[Math.floor(faceSample.length * .985)] : 0), nb = Math.max(4, percentile(bodyDog, .985));
+  const highEnd = list => { list.sort((a, z) => a - z); return list.length ? list[Math.floor(list.length * .985)] : 0; };
+  const nf = Math.max(4, highEnd(faceSample)), nh = Math.max(4, highEnd(handSample) * .7), nb = Math.max(4, percentile(bodyDog, .985));
   const line = new Float32Array(n);
-  for (let i = 0; i < n; i++) line[i] = clamp(lerp(bodyDog[i] / nb, faceDog[i] / nf, faceW[i]));
+  for (let i = 0; i < n; i++) line[i] = clamp(lerp(bodyDog[i] / nb, faceDog[i] / (faceW[i] >= handW[i] ? nf : nh), detail[i]));
 
   // Structure tensor: a smooth stroke direction (along contours and hair strands) plus how coherent it is.
   const gx = new Float32Array(n), gy = new Float32Array(n);
   const at = (f, x, y) => f[clamp(y, 0, gh - 1) * gw + clamp(x, 0, gw - 1)];
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
-    const i = y * gw + x, f = faceW[i] > .5 ? b1 : b2;
+    const i = y * gw + x, f = detail[i] > .5 ? b1 : b2;
     gx[i] = (at(f, x + 1, y - 1) + 2 * at(f, x + 1, y) + at(f, x + 1, y + 1)) - (at(f, x - 1, y - 1) + 2 * at(f, x - 1, y) + at(f, x - 1, y + 1));
     gy[i] = (at(f, x - 1, y + 1) + 2 * at(f, x, y + 1) + at(f, x + 1, y + 1)) - (at(f, x - 1, y - 1) + 2 * at(f, x, y - 1) + at(f, x + 1, y - 1));
   }
@@ -257,26 +324,26 @@ function analyzeFace(base, face) { // everything that depends on where the face 
     shade[i] = Math.max(relative, absolute) * (1 - far[i] * .5);
   }
 
-  // Keep mask: the silhouette grown by a few pixels. Anything drawn outside it is erased at the end.
-  const keep = new Float32Array(n);
-  if (base.person) { const grown = blur(subject, gw, gh, 3); for (let i = 0; i < n; i++) keep[i] = clamp((grown[i] - .12) / .25); }
-  else keep.fill(1);
+  // Outside mask: everything beyond the silhouette (grown by a few pixels). Graphite landing there is clipped
+  // away as it is drawn. The mask is binary, so clipping every frame never eats into the drawing itself.
   const outside = document.createElement('canvas'); outside.width = W; outside.height = H;
-  const octx = outside.getContext('2d'), mask = octx.createImageData(W, H);
+  const octx = outside.getContext('2d'), mask = octx.createImageData(W, H), grown = base.person ? blur(subject, gw, gh, 3) : null;
   for (let p = 3; p < mask.data.length; p += 4) mask.data[p] = 255;
-  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) mask.data[((y + b.y) * W + x + b.x) * 4 + 3] = 255 * (1 - keep[y * gw + x]);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) mask.data[((y + b.y) * W + x + b.x) * 4 + 3] = grown && grown[y * gw + x] < .25 ? 255 : 0;
   octx.putImageData(mask, 0, 0);
 
-  const A = { ...base, line, ang, coh, shade, silhouette, hair, faceW, far, subject, head, eyeW, keep, outside, face, skinHi };
+  const A = { ...base, line, ang, coh, shade, silhouette, hair, faceW, handW, detail, zone, far, subject, head, eyeW, outside, face, skinHi };
   A.contours = traceContours(A);
-  A.fills = makeFills(A);
+  A.fills = [...makeFills(A), ...makeFeatureMarks(A)];
   return A;
 }
 // Vision models (MediaPipe, loaded once from the CDN): face detection frames the portrait, segmentation separates the person.
 const MEDIAPIPE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1';
 const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
 const PERSON_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
-let visionPromise = null, detectorPromise = null, segmenterPromise = null, detectorReady = false;
+const FACE_MESH_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+let visionPromise = null, detectorPromise = null, segmenterPromise = null, landmarkerPromise = null, detectorReady = false;
 function loadVision() {
   visionPromise ??= (async () => {
     const vision = await import(`${MEDIAPIPE}/vision_bundle.mjs`);
@@ -298,6 +365,36 @@ function loadSegmenter() {
     return vision.ImageSegmenter.createFromOptions(files, { baseOptions:{ modelAssetPath:PERSON_MODEL, delegate:'CPU' }, runningMode:'IMAGE', outputConfidenceMasks:true, outputCategoryMask:false });
   })().catch(error => { segmenterPromise = null; throw error; });
   return segmenterPromise;
+}
+function loadLandmarkers() {
+  // Face mesh (478 points: brows, lids, irises, nose, lips) and hand landmarks (21 joints per hand).
+  landmarkerPromise ??= (async () => {
+    const { vision, files } = await loadVision(), F = vision.FaceLandmarker;
+    const [faceMesh, hands] = await Promise.all([
+      F.createFromOptions(files, { baseOptions:{ modelAssetPath:FACE_MESH_MODEL, delegate:'CPU' }, runningMode:'IMAGE', numFaces:1 }),
+      vision.HandLandmarker.createFromOptions(files, { baseOptions:{ modelAssetPath:HAND_MODEL, delegate:'CPU' }, runningMode:'IMAGE', numHands:2, minHandDetectionConfidence:.4 }),
+    ]);
+    const ids = connections => [...new Set(connections.flatMap(c => [c.start, c.end]))];
+    const parts = {
+      browL:ids(F.FACE_LANDMARKS_LEFT_EYEBROW), browR:ids(F.FACE_LANDMARKS_RIGHT_EYEBROW),
+      eyeL:ids(F.FACE_LANDMARKS_LEFT_EYE), eyeR:ids(F.FACE_LANDMARKS_RIGHT_EYE),
+      irisL:ids(F.FACE_LANDMARKS_LEFT_IRIS), irisR:ids(F.FACE_LANDMARKS_RIGHT_IRIS),
+      lips:ids(F.FACE_LANDMARKS_LIPS), oval:F.FACE_LANDMARKS_FACE_OVAL,
+    };
+    return { faceMesh, hands, parts, bones:vision.HandLandmarker.HAND_CONNECTIONS };
+  })().catch(error => { landmarkerPromise = null; throw error; });
+  return landmarkerPromise;
+}
+async function detectLandmarks(base) {
+  try {
+    const L = await withTimeout(loadLandmarkers(), 40000), px = p => ({ x:p.x * base.gw, y:p.y * base.gh });
+    const mesh = L.faceMesh.detect(base.work).faceLandmarks?.[0]?.map(px) ?? null;
+    const hands = (L.hands.detect(base.work).landmarks ?? []).map(hand => hand.map(px));
+    return { mesh, hands, parts:L.parts, bones:L.bones };
+  } catch (error) {
+    console.warn('Face/hand landmarks unavailable:', error);
+    return null;
+  }
 }
 const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, fail) => setTimeout(() => fail(new Error('timeout')), ms))]);
 async function segmentPerson(base) {
@@ -337,10 +434,12 @@ async function detectFace(base) {
   }
 }
 function traceContours(A) {
-  const { gw, gh, line, ang, faceW, far, subject, head, eyeW, silhouette } = A, owner = new Int32Array(gw * gh), STEP = 2;
+  const { gw, gh, line, ang, faceW, handW, detail, zone, far, subject, head, eyeW, silhouette } = A, owner = new Int32Array(gw * gh), STEP = 2;
   // Hair and fabric texture raise the bar a little, so their long flowing lines survive but not every weave.
   // The silhouette ignores the distance fade: the outer contour of the figure is always drawn.
-  const bar = i => silhouette[i] > .3 ? .75 : (1 - .3 * faceW[i]) * (1 + .7 * far[i]) * (1 - .35 * eyeW[i]) * (faceW[i] > .5 ? 1 : 1.1);
+  // Features and hands lower it (more detail); the nose bridge raises it, since a sketch barely marks it.
+  const featureBar = i => zone[i] & (Z.BROW | Z.EYE | Z.IRIS | Z.LIPS | Z.NOSE | Z.HAND) ? .7 : zone[i] & Z.BRIDGE ? 1.4 : 1;
+  const bar = i => silhouette[i] > .3 ? .75 : (1 - .3 * detail[i]) * (1 + .7 * far[i]) * (1 - .35 * eyeW[i]) * (detail[i] > .5 ? 1 : 1.1) * featureBar(i);
   const high = i => .34 * bar(i), low = i => .14 * bar(i);
   const seeds = [];
   for (let y = 3; y < gh - 3; y += 2) for (let x = 3; x < gw - 3; x += 2) { const i = y * gw + x; if (subject[i] > .3 && line[i] > high(i)) seeds.push(i); }
@@ -371,24 +470,26 @@ function traceContours(A) {
     id++;
     const sx = seed % gw, sy = (seed / gw) | 0;
     const pts = walk(sx, sy, ang[seed] + Math.PI, id).reverse().concat([{ x:sx, y:sy }], walk(sx, sy, ang[seed], id));
-    const len = (pts.length - 1) * STEP, fw = faceW[seed], inFace = fw > .5;
-    if (len < (inFace ? 7 : head[seed] ? 16 : 20)) continue; // short marks outside the face read as fur
-    const radius = inFace ? 2 : 3; let sum = 0, faceSum = 0, subjectSum = 0, headSum = 0, eyeSum = 0;
+    const len = (pts.length - 1) * STEP, fine = detail[seed] > .5;
+    if (len < (fine ? 6 : head[seed] ? 16 : 20)) continue; // short marks outside the face and hands read as fur
+    const radius = fine ? 2 : 3, zones = new Float32Array(8); let sum = 0, faceSum = 0, handSum = 0, subjectSum = 0, headSum = 0, eyeSum = 0;
     for (const p of pts) {
-      const px = Math.round(p.x), py = Math.round(p.y), i = py * gw + px; sum += line[i]; faceSum += faceW[i]; subjectSum += subject[i]; headSum += head[i]; eyeSum += eyeW[i];
+      const px = Math.round(p.x), py = Math.round(p.y), i = py * gw + px; sum += line[i]; faceSum += faceW[i]; handSum += handW[i]; subjectSum += subject[i]; headSum += head[i]; eyeSum += eyeW[i];
+      for (let k = 0; k < 8; k++) if (zone[i] & (1 << k)) zones[k]++;
       for (let v = -radius; v <= radius; v++) for (let u = -radius; u <= radius; u++) {
         const j = (py + v) * gw + px + u; if (j >= 0 && j < owner.length && !owner[j]) owner[j] = id;
       }
     }
     if (subjectSum / pts.length < .5) continue; // background lines are never drawn
-    strokes.push({ raw:pts, len, strength:clamp(sum / pts.length), face:faceSum / pts.length, head:headSum / pts.length > .5, eye:eyeSum / pts.length });
+    const m = pts.length, hand = handSum / m;
+    strokes.push({ raw:pts, len, strength:clamp(sum / m), face:faceSum / m, hand, head:headSum / m > .5 && hand < .5, eye:eyeSum / m, zones:Array.from(zones, c => c / m), meshed:!!A.marks?.mesh });
   }
   return strokes;
 }
 function makeShading(A, density, rand) {
   // Croquis shading: a few parallel diagonal strokes laid only into folds and cast shadows (the shadow field),
   // lighter and tighter on the face. Nothing is filled in — dark hair and dark clothes stay line drawings.
-  const { gw, gh, shade, faceW, head, line, eyeW } = A, out = [], ANGLE = -1.05, BASE = 1.5;
+  const { gw, gh, shade, detail, handW, zone, head, line, eyeW } = A, out = [], ANGLE = -1.05, BASE = 1.5;
   const thr = lerp(.5, .14, density), dx = Math.cos(ANGLE), dy = Math.sin(ANGLE), nx = -dy, ny = dx;
   const corners = [[0, 0], [gw, 0], [0, gh], [gw, gh]];
   const offs = corners.map(([x, y]) => x * nx + y * ny), alongs = corners.map(([x, y]) => x * dx + y * dy);
@@ -407,7 +508,8 @@ function makeShading(A, density, rand) {
         const rot = p => ({ x:mx + (p.x - mx) * Math.cos(turn) - (p.y - my) * Math.sin(turn), y:my + (p.x - mx) * Math.sin(turn) + (p.y - my) * Math.cos(turn) });
         p0 = rot(p0); p2 = rot(p2);
         const p1 = { x:(p0.x + p2.x) / 2 + nx * bow, y:(p0.y + p2.y) / 2 + ny * bow }, sh = run.shade / run.n;
-        out.push({ raw:[p0, p1, p2], len:piece, kind:'hatch', face:fw, head:run.head / run.n > .5, shade:sh, layer:0, offset:o,
+        const hand = run.hand / run.n;
+        out.push({ raw:[p0, p1, p2], len:piece, kind:'hatch', face:fw, hand, head:run.head / run.n > .5 && hand < .5, shade:sh, layer:0, offset:o,
           alpha0:clamp(.24 + (sh - thr) * 1.2, .24, .65) * (fw > .5 ? .75 : 1), width0:fw > .5 ? .9 : 1.15 });
         s = e + 3 + rand() * 4;
       }
@@ -416,12 +518,14 @@ function makeShading(A, density, rand) {
     for (let s = minA; s <= maxA; s += 2) {
       const x = Math.round(dx * s + nx * o), y = Math.round(dy * s + ny * o);
       if (x < 2 || y < 2 || x >= gw - 2 || y >= gh - 2) { emit(); continue; }
-      const i = y * gw + x, fw = faceW[i];
-      // Line spacing ~3px on the face, ~4.5px elsewhere; eyes and the drawn contours stay clean.
+      const i = y * gw + x, fw = detail[i];
+      // Line spacing ~3px on the face and hands, ~4.5px elsewhere. Eyes, brows, lips and the drawn contours stay clean;
+      // soft facial shadows (under the nose, lower lip, jaw) get a lower bar so the face gains some modelling.
       const onLine = fw > .5 ? k % 2 === 0 : k % 3 === 0;
-      if (onLine && eyeW[i] < .4 && line[i] < .55 && !isHair(A, i) && shade[i] > thr + (hash(x >> 3, y >> 3, 9) - .5) * .08) {
-        if (!run) run = { s0:s, shade:0, face:0, head:0, n:0 };
-        run.s1 = s; run.shade += shade[i]; run.face += fw; run.head += head[i]; run.n++;
+      const clean = eyeW[i] < .4 && !(zone[i] & (Z.BROW | Z.EYE | Z.IRIS | Z.LIPS)) && line[i] < .55 && !isHair(A, i);
+      if (onLine && clean && shade[i] > thr * (fw > .5 ? .75 : 1) + (hash(x >> 3, y >> 3, 9) - .5) * .08) {
+        if (!run) run = { s0:s, shade:0, face:0, hand:0, head:0, n:0 };
+        run.s1 = s; run.shade += shade[i]; run.face += fw; run.hand += handW[i]; run.head += head[i]; run.n++;
       } else emit();
     }
     emit();
@@ -468,14 +572,72 @@ function makeHairStrands(A, density, rand) {
   }
   return out;
 }
+function makeFeatureMarks(A) {
+  // Mesh-guided features: eyebrows as short hair strokes along their growth, irises as dense shading that
+  // keeps the catch-light — the details a portrait artist spends the most care on.
+  const mesh = A.marks?.mesh; if (!mesh) return [];
+  const { gw, gh, b1, skinHi } = A, { parts } = A.marks, out = [], rand = random(77), P = ids => ids.map(i => mesh[i]);
+  const mark = (a, z, alpha, width) => out.push({ raw:[a, z], len:Math.hypot(z.x - a.x, z.y - a.y), face:1, strength:1, head:true, kind:'fill', alpha0:alpha, width0:width });
+  const darkness = (x, y) => { const i = clamp(Math.round(y), 0, gh - 1) * gw + clamp(Math.round(x), 0, gw - 1); return skinHi - b1[i]; };
+  const bridge = mesh[168];
+  for (const ids of [parts.browL, parts.browR]) {
+    const pts = P(ids), hull = convexHull(pts), c = centroid(pts);
+    let cxx = 0, cyy = 0, cxy = 0; for (const p of pts) { cxx += (p.x - c.x) ** 2; cyy += (p.y - c.y) ** 2; cxy += (p.x - c.x) * (p.y - c.y); }
+    const theta = .5 * Math.atan2(2 * cxy, cxx - cyy); let ux = Math.cos(theta), uy = Math.sin(theta);
+    if ((c.x - bridge.x) * ux + (c.y - bridge.y) * uy < 0) { ux = -ux; uy = -uy; } // u runs from the inner end outward
+    let vx = -uy, vy = ux; if (vy > 0) { vx = -vx; vy = -vy; } // v points up
+    const us = hull.map(p => (p.x - c.x) * ux + (p.y - c.y) * uy), vs = hull.map(p => (p.x - c.x) * vx + (p.y - c.y) * vy);
+    const minU = Math.min(...us), maxU = Math.max(...us), minV = Math.min(...vs), maxV = Math.max(...vs), browH = Math.max(3, maxV - minV);
+    for (let v = minV; v <= maxV; v += 1.8) for (let u = minU; u <= maxU;) {
+      const x = c.x + ux * u + vx * v, y = c.y + uy * u + vy * v, dk = darkness(x, y);
+      // Skip where the skin isn't really darker, and where it is just as dark above the brow: that's a fringe covering it.
+      const covered = darkness(x + vx * browH * 1.3, y + vy * browH * 1.3) > 35;
+      if (!insidePolygon(hull, x, y) || dk < 35 || covered) { u += 1; continue; }
+      // Inner hairs stand up, outer hairs lie flat along the brow; the tail thins out.
+      const t = (u - minU) / Math.max(1, maxU - minU), lift = lerp(.75, .12, clamp(t * 2)), len = 3.5 + rand() * 3.5;
+      const ex = x + (ux * Math.cos(lift) + vx * Math.sin(lift)) * len, ey = y + (uy * Math.cos(lift) + vy * Math.sin(lift)) * len;
+      mark({ x, y }, { x:ex, y:ey }, clamp(.28 + dk / 200, .28, .65) * lerp(1, .6, clamp((t - .6) / .4)), .85);
+      u += 2.6 + rand() * 2;
+    }
+  }
+  for (const [irisIds, eyeIds] of [[parts.irisL, parts.eyeL], [parts.irisR, parts.eyeR]]) {
+    const iris = P(irisIds), c = centroid(iris), r = Math.max(...iris.map(p => Math.hypot(p.x - c.x, p.y - c.y))) * .95, lids = convexHull(P(eyeIds));
+    if (r < 1.5) continue;
+    let hx = c.x, hy = c.y, hv = -Infinity; // the catch-light: the brightest spot inside the visible iris
+    for (let y = c.y - r; y <= c.y + r; y++) for (let x = c.x - r; x <= c.x + r; x++) {
+      if (Math.hypot(x - c.x, y - c.y) > r || !insidePolygon(lids, x, y)) continue;
+      const v = -darkness(x, y); if (v > hv) { hv = v; hx = x; hy = y; }
+    }
+    const glint = hv + darkness(c.x, c.y) > 40;
+    const hatch = (angle, radius, alpha) => {
+      const dx = Math.cos(angle), dy = Math.sin(angle), nx = -dy, ny = dx;
+      for (let o = -radius; o <= radius; o += 1.1) {
+        let start = null, last = null;
+        for (let s = -radius - 1; s <= radius + 1; s += .7) {
+          const x = c.x + dx * s + nx * o, y = c.y + dy * s + ny * o;
+          const ok = Math.hypot(x - c.x, y - c.y) <= radius && insidePolygon(lids, x, y) && !(glint && Math.hypot(x - hx, y - hy) < r * .3);
+          if (ok) { start ??= { x, y }; last = { x, y }; }
+          else if (start) { if (Math.hypot(last.x - start.x, last.y - start.y) > 1) mark(start, last, alpha, 1); start = null; }
+        }
+        if (start && Math.hypot(last.x - start.x, last.y - start.y) > 1) mark(start, last, alpha, 1);
+      }
+    };
+    hatch(-.7, r, .45);        // iris
+    hatch(.85, r * .5, .5);    // darker pupil
+  }
+  return out;
+}
 function makeFills(A) {
   // The darkest small shapes in the face — pupils, nostrils, the line between the lips, brows —
   // are filled with a tight zig-zag scribble along their long axis. They carry most of the likeness.
-  const { gw, soft, b1, skinHi, faceW, eyeW, face } = A, out = [];
+  const { gw, soft, b1, skinHi, faceW, eyeW, zone, face } = A, out = [], meshed = !!A.marks?.mesh;
   const x0 = Math.max(1, Math.floor(face.x - face.rx)), x1 = Math.min(gw - 2, Math.ceil(face.x + face.rx));
   const y0 = Math.max(1, Math.floor(face.y - face.ry)), y1 = Math.min(A.gh - 2, Math.ceil(face.y + face.ry));
   // Far darker than the skin: pupils, nostrils, lip line. In the eyes a sharper map catches the small iris.
-  const dark = i => faceW[i] > .6 && (eyeW[i] > .3 ? skinHi - b1[i] > 95 : skinHi - soft[i] > 124);
+  // With a face mesh, brows and irises are drawn by makeFeatureMarks instead.
+  const dark = meshed
+    ? i => faceW[i] > .6 && !(zone[i] & (Z.BROW | Z.EYE | Z.IRIS)) && skinHi - soft[i] > 124
+    : i => faceW[i] > .6 && (eyeW[i] > .3 ? skinHi - b1[i] > 95 : skinHi - soft[i] > 124);
   const label = new Int32Array(gw * A.gh), maxArea = face.rx * face.ry * .05, maxSpan = face.rx * .6;
   let id = 0;
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
@@ -569,10 +731,17 @@ function styleStroke(s) {
   if (s.kind === 'construct') { s.width = 1.1; s.alpha = .24; s.ghost = 0; }
   else if (s.kind === 'contour') { // confident graphite: strong lines press hard and broad, faint ones stay light
     s.width = lerp(1.05 + str * 1.5, .9 + str * 1.2, s.face); s.alpha = .42 + .58 * Math.pow(str, .7); s.ghost = .3;
-    if (s.eye > .4) { s.width *= 1.35; s.alpha = Math.min(1, s.alpha + .2); } // lash lines and lids carry the expression
+    // Line hierarchy inside the face: lash lines and lids carry the expression, nostrils and the lip line come next,
+    // the nose bridge and loose cheek lines stay whisper-light so the face doesn't look carved.
+    const z = s.zones ?? [];
+    if (s.eye > .4 || z[ZB.EYE] > .4) { s.width *= 1.35; s.alpha = Math.min(1, s.alpha + .2); }
+    else if (z[ZB.BRIDGE] > .5 && z[ZB.NOSE] < .3) { s.alpha *= .4; s.width *= .7; s.ghost = 0; }
+    else if (z[ZB.NOSE] > .4 || z[ZB.LIPS] > .4) s.alpha = Math.min(1, s.alpha + .12);
+    else if (z[ZB.BROW] > .4) s.alpha *= .6; // brows get their own hair strokes
+    else if (s.face > .5 && s.hand < .3 && (z[ZB.JAW] ?? 0) < .3 && s.meshed) { s.alpha *= .7; s.width *= .85; }
   }
   else if (s.kind === 'accent') { s.width = 1.1 + str * .9; s.alpha = .75; s.ghost = .1; }
-  else if (s.kind === 'fill') { s.width = 1.2; s.alpha = .4; s.ghost = 0; }
+  else if (s.kind === 'fill') { s.width = s.width0 ?? 1.2; s.alpha = s.alpha0 ?? .4; s.ghost = 0; }
   else { s.width = s.width0; s.alpha = s.alpha0; s.ghost = 0; }
   return s;
 }
@@ -616,44 +785,19 @@ function orderHatching(list, from) {
   }
   return out;
 }
-function planEraser(strokes, keepAt) {
-  // Find the patches where graphite strayed outside the silhouette and scrub each one back and forth.
-  const CELL = 30, dirt = new Map();
-  for (const s of strokes) for (let i = 0; i < s.n; i += 2) {
-    if (keepAt(s.x[i], s.y[i]) >= .5) continue;
-    const key = `${Math.floor(s.x[i] / CELL)},${Math.floor(s.y[i] / CELL)}`; dirt.set(key, (dirt.get(key) || 0) + s.alpha);
-  }
-  const cells = [...dirt].filter(([, v]) => v > .8).sort((a, z) => z[1] - a[1]).slice(0, 36)
-    .map(([key]) => { const [cx, cy] = key.split(',').map(Number); return { x:(cx + .5) * CELL, y:(cy + .5) * CELL }; });
-  if (!cells.length) return null;
-  const tour = []; let at = { x:W, y:H * .75 };
-  while (cells.length) {
-    let best = 0, bestD = Infinity;
-    cells.forEach((c, i) => { const d = (c.x - at.x) ** 2 + (c.y - at.y) ** 2; if (d < bestD) { bestD = d; best = i; } });
-    at = cells.splice(best, 1)[0]; tour.push(at);
-  }
-  const pts = []; let leg = 0;
-  for (const c of tour) {
-    for (let k = 0; k < 4; k++) {
-      const y0 = c.y - 11 + k * 7.5, from = k % 2 ? c.x + 19 : c.x - 19, to = k % 2 ? c.x - 19 : c.x + 19; leg++;
-      for (let u = 0; u <= 1.001; u += .1) pts.push({ x:lerp(from, to, u), y:y0 + (u - .5) * 5, down:true, leg });
-    }
-    pts.push({ ...pts[pts.length - 1], down:false, leg:0 }); // lift before moving to the next patch
-  }
-  return { pts };
-}
 function buildPlan(A, durationSec, densityPercent, style = 'shade') {
   const density = densityPercent / 100, rand = random(1234), { b, face } = A;
   const totalMs = durationSec * 1000, leadMs = 380, outroMs = Math.min(1200, totalMs * .07);
-  const eraserMs = A.person ? clamp(totalMs * .12, 1000, 2400) : 0, drawMs = totalMs - leadMs - outroMs - eraserMs;
+  const drawMs = totalMs - leadMs - outroMs;
   const capacity = (drawMs / 1000) * SPEED;
   const cost = s => strokeCost(s.kind, s.len);
   const prep = (list, kind) => list.map(s => finalizeStroke(kind ? { ...s, kind } : s, rand, b.x, b.y)).filter(Boolean);
 
   const contours = prep(A.contours, 'contour'), fills = prep(A.fills);
   const priority = s => s.strength * (.45 + Math.min(1.4, s.len / 70));
-  const headContours = contours.filter(s => s.face > .5 || s.head).sort((a, z) => priority(z) - priority(a));
-  const bodyContours = contours.filter(s => !(s.face > .5 || s.head)).sort((a, z) => priority(z) - priority(a));
+  const group = s => s.hand > .5 ? 'hand' : s.face > .5 || s.head ? 'head' : 'body';
+  const pool = (list, name) => list.filter(s => group(s) === name).sort((a, z) => priority(z) - priority(a));
+  const headContours = pool(contours, 'head'), handContours = pool(contours, 'hand'), bodyContours = pool(contours, 'body');
 
   let carry = 0; const stats = {};
   const take = (pool, share, name) => {
@@ -665,7 +809,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade') {
   const constructBudget = capacity * .06; let constructUsed = 0; const construct = [];
   for (const s of A.contours.slice().sort((a, z) => z.len - a.len)) {
     if (s.len < 40) break;
-    if (s.face > .3) continue; // guide lines block in hair, shoulders and body — never across the face
+    if (s.face > .3 || s.hand > .3) continue; // guide lines block in hair, shoulders and body — never across the face or hands
     // A searching line: the same curve, loosened, drawn a couple of pixels to one side and overshooting its ends.
     const loose = simplify(s.raw, 1.6), a = loose[0], z = loose[loose.length - 1];
     const ext = (p, q) => { const l = Math.hypot(p.x - q.x, p.y - q.y) || 1, e = 6 + rand() * 8; return { x:p.x + (p.x - q.x) / l * e, y:p.y + (p.y - q.y) / l * e }; };
@@ -678,8 +822,8 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade') {
   // Shares of the time budget. Lines always come first; shading only gets what the "선 + 그림자" style allows.
   const shaded = style === 'shade';
   const hatches = shaded ? prep([...makeShading(A, density, rand), ...makeHairStrands(A, density, rand)]).sort((a, z) => z.shade - a.shade) : [];
-  const headC = take(headContours, shaded ? .32 : .48, 'headContour');
-  const headF = take(fills, .05, 'fill');
+  const headC = take(headContours, shaded ? .28 : .40, 'headContour');
+  const headF = take(fills, .08, 'fill');
   const accents = [];
   let accentBudget = capacity * .03 + carry;
   for (const s of headC.filter(c => c.face > .5).sort((a, z) => z.strength - a.strength).slice(0, Math.ceil(headC.length * .08))) {
@@ -687,9 +831,11 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade') {
     if (cost(c) <= accentBudget) { accents.push(c); accentBudget -= cost(c); }
   }
   carry = accentBudget;
-  const headH = take(hatches.filter(s => s.head), .12, 'headHatch');
-  const bodyC = take(bodyContours, shaded ? .24 : .38, 'bodyContour');
-  const bodyH = take(hatches.filter(s => !s.head), .18, 'bodyHatch');
+  const headH = take(hatches.filter(s => group(s) === 'head'), .10, 'headHatch');
+  const handC = take(handContours, shaded ? .10 : .15, 'handContour');
+  const handH = take(hatches.filter(s => group(s) === 'hand'), .03, 'handHatch');
+  const bodyC = take(bodyContours, shaded ? .20 : .30, 'bodyContour');
+  const bodyH = take(hatches.filter(s => group(s) === 'body'), .14, 'bodyHatch');
 
   const faceCenter = { x:b.x + face.x, y:b.y + face.y - face.ry * .4 };
   const phases = []; let at = faceCenter;
@@ -700,11 +846,13 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade') {
   add(orderNearest(accents, at));
   add(orderHatching(headH, at));
   const faceEndIndex = phases.reduce((a, p) => a + p.length, 0);
+  add(orderNearest(handC, at));
+  add(orderHatching(handH, at));
   add(orderNearest(bodyC, at));
   add(orderHatching(bodyH, at));
   const strokes = phases.flat().map(styleStroke);
 
-  // Timeline in raw units, then scaled so the last stroke ends exactly before the eraser and the outro.
+  // Timeline in raw units, then scaled so the last stroke ends exactly before the outro.
   const entry = { x:W + 40, y:H * .78 }; let t = 0, px = entry.x, py = entry.y;
   for (const s of strokes) {
     const d = Math.hypot(s.x[0] - px, s.y[0] - py);
@@ -716,37 +864,24 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade') {
   for (const s of strokes) { s.tLift = s.tLift * scale + (s === strokes[0] ? 0 : leadMs); s.tDown = s.tDown * scale + leadMs; s.tUp = s.tUp * scale + leadMs; }
   const drawEndMs = leadMs + drawMs, faceEndMs = faceEndIndex && strokes[faceEndIndex - 1] ? strokes[faceEndIndex - 1].tUp : 0;
 
-  // Eraser: enters after the pencil has left, scrubs each stray patch, and leaves before the outro.
-  const keepAt = (x, y) => { const gx = Math.floor(x - b.x), gy = Math.floor(y - b.y); return gx < 0 || gy < 0 || gx >= A.gw || gy >= A.gh ? 0 : A.keep[gy * A.gw + gx]; };
-  const eraser = eraserMs ? planEraser(strokes, keepAt) : null, audioStrokes = strokes.slice();
-  if (eraser) {
-    const startMs = drawEndMs + 350, span = eraserMs - 800; let raw = 0, prev = { x:W + 60, y:H * .75, down:false };
-    for (const p of eraser.pts) { const d = Math.hypot(p.x - prev.x, p.y - prev.y); raw += p.down && prev.down ? d : d * .35 + 20; p.raw = raw; prev = p; }
-    for (const p of eraser.pts) p.t = startMs + 300 + p.raw / raw * span;
-    Object.assign(eraser, { startMs, endMs:eraser.pts[eraser.pts.length - 1].t, entry:{ x:W + 60, y:H * .75 }, exit:{ x:W + 80, y:H * .95 } });
-    const legs = new Map(); for (const p of eraser.pts) if (p.down) { const l = legs.get(p.leg); if (l) l.tUp = p.t; else legs.set(p.leg, { tDown:p.t, tUp:p.t, kind:'erase' }); }
-    audioStrokes.push(...legs.values());
-  }
-  return { strokes, totalMs, drawEndMs, exitMs:350, entry, exit:{ x:W + 60, y:H * .9 }, faceEndMs, eraser, outside:A.outside, stats, audio:buildAudioEvents(audioStrokes) };
+  return { strokes, totalMs, drawEndMs, exitMs:Math.min(700, outroMs * .75), entry, exit:{ x:W + 60, y:H * .9 }, faceEndMs, outside:A.outside, stats, audio:buildAudioEvents(strokes) };
 }
 
 // ───────────────────────── rendering ─────────────────────────
-let cursor = { stroke:0, point:0, erase:0, cleaned:false, time:-1 };
-function resetInk() { inkCtx.clearRect(0, 0, W, H); cursor = { stroke:0, point:0, erase:0, cleaned:false, time:-1 }; }
+let cursor = { stroke:0, point:0, time:-1 };
+function resetInk() { inkCtx.clearRect(0, 0, W, H); cursor = { stroke:0, point:0, time:-1 }; }
+let inkDarkness = Number(darkness.value) / 100; // "선 진하기": scales every stroke's graphite
 function drawSegment(s, i) {
-  const p = (s.pr[i] + s.pr[i + 1]) / 2;
-  inkCtx.globalAlpha = s.alpha * p; inkCtx.lineWidth = s.width * (.45 + .55 * p);
+  const p = (s.pr[i] + s.pr[i + 1]) / 2, a = s.alpha * p * inkDarkness;
+  // Once a stroke is fully opaque, extra darkness presses harder: the line gets broader instead.
+  const press = a > 1 ? Math.min(1.8, 1 + (a - 1) * .6) : 1;
+  inkCtx.globalAlpha = Math.min(1, a); inkCtx.lineWidth = s.width * (.45 + .55 * p) * press;
   inkCtx.beginPath(); inkCtx.moveTo(s.x[i], s.y[i]); inkCtx.lineTo(s.x[i + 1], s.y[i + 1]); inkCtx.stroke();
   if (s.ghost) { // a second, fainter graphite edge makes the line look drawn rather than vector-perfect
     const dx = s.x[i + 1] - s.x[i], dy = s.y[i + 1] - s.y[i], l = Math.hypot(dx, dy) || 1, o = .55;
-    inkCtx.globalAlpha = s.alpha * p * s.ghost; inkCtx.lineWidth = s.width * .55;
+    inkCtx.globalAlpha = Math.min(1, a * s.ghost); inkCtx.lineWidth = s.width * .55 * press;
     inkCtx.beginPath(); inkCtx.moveTo(s.x[i] - dy / l * o, s.y[i] + dx / l * o); inkCtx.lineTo(s.x[i + 1] - dy / l * o, s.y[i + 1] + dx / l * o); inkCtx.stroke();
   }
-}
-function eraseDab(x, y) { // removes graphite under the eraser, but only outside the silhouette
-  inkCtx.save(); inkCtx.beginPath(); inkCtx.arc(x, y, 13, 0, Math.PI * 2); inkCtx.clip();
-  inkCtx.globalCompositeOperation = 'destination-out'; inkCtx.globalAlpha = .6; inkCtx.drawImage(plan.outside, 0, 0);
-  inkCtx.restore();
 }
 function strokeProgress(s, t) {
   const f = clamp((t - s.tDown) / Math.max(1, s.tUp - s.tDown));
@@ -755,21 +890,17 @@ function strokeProgress(s, t) {
 function advanceInk(t) {
   if (t < cursor.time) resetInk();
   cursor.time = t;
-  const list = plan.strokes;
+  const list = plan.strokes; let drew = false;
   while (cursor.stroke < list.length) {
     const s = list[cursor.stroke];
     if (t < s.tDown) break;
     const done = t >= s.tUp, target = done ? s.n - 1 : Math.floor(strokeProgress(s, t));
-    while (cursor.point < target) drawSegment(s, cursor.point++);
+    while (cursor.point < target) { drawSegment(s, cursor.point++); drew = true; }
     if (!done) break;
     cursor.stroke++; cursor.point = 0;
   }
-  const e = plan.eraser;
-  if (e) {
-    while (cursor.erase < e.pts.length && e.pts[cursor.erase].t <= t) { const p = e.pts[cursor.erase++]; if (p.down) eraseDab(p.x, p.y); }
-    if (!cursor.cleaned && t > e.endMs) { // final tidy-up of any specks the eraser didn't visit
-      cursor.cleaned = true; inkCtx.save(); inkCtx.globalCompositeOperation = 'destination-out'; inkCtx.drawImage(plan.outside, 0, 0); inkCtx.restore();
-    }
+  if (drew) { // graphite never survives outside the figure's silhouette
+    inkCtx.save(); inkCtx.globalCompositeOperation = 'destination-out'; inkCtx.globalAlpha = 1; inkCtx.drawImage(plan.outside, 0, 0); inkCtx.restore();
   }
 }
 const ease = u => .5 - .5 * Math.cos(Math.PI * clamp(u));
@@ -790,16 +921,6 @@ function pencilAt(t) {
   const k = strokeProgress(s, t), i = Math.min(s.n - 2, Math.floor(k)), f = k - i;
   return { x:lerp(s.x[i], s.x[i + 1], f), y:lerp(s.y[i], s.y[i + 1], f), lift:0, dir:Math.sign(s.x[i + 1] - s.x[i]) };
 }
-function eraserAt(t) {
-  const e = plan.eraser; if (!e || t < e.startMs) return null;
-  const pts = e.pts, first = pts[0], last = pts[pts.length - 1];
-  if (t < first.t) { const u = ease((t - e.startMs) / (first.t - e.startMs)); return { x:lerp(e.entry.x, first.x, u), y:lerp(e.entry.y, first.y, u), lift:1 - u * .8, dir:0 }; }
-  if (t >= last.t) { const u = (t - last.t) / 400; if (u >= 1) return null; const k = ease(u); return { x:lerp(last.x, e.exit.x, k), y:lerp(last.y, e.exit.y, k), lift:Math.min(1, u * 3), dir:0 }; }
-  let lo = 0, hi = pts.length - 1;
-  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid].t <= t) lo = mid; else hi = mid; }
-  const a = pts[lo], z = pts[hi], f = clamp((t - a.t) / Math.max(1, z.t - a.t));
-  return { x:lerp(a.x, z.x, f), y:lerp(a.y, z.y, f), lift:a.down && z.down ? 0 : .5, dir:Math.sign(z.x - a.x) };
-}
 function drawPencil(pen) {
   // A dark graphite pencil whose point rides the stroke; when lifted it rises and its shadow drifts away.
   const lift = pen.lift;
@@ -812,24 +933,10 @@ function drawPencil(pen) {
   ctx.beginPath(); ctx.moveTo(-2.3, -3.2); ctx.lineTo(2.3, -3.2); ctx.lineTo(0, 0); ctx.closePath(); ctx.fillStyle = '#111416'; ctx.fill();
   ctx.restore();
 }
-function drawEraser(pos) {
-  // A white block eraser in a blue paper sleeve, rubbing with its lower edge.
-  const lift = pos.lift;
-  ctx.save(); ctx.translate(pos.x + lift * 4, pos.y - lift * 8); ctx.rotate(-.35 + pos.dir * .05);
-  ctx.save(); ctx.translate(6 + lift * 10, 7 + lift * 8); ctx.filter = `blur(${4 + lift * 3}px)`; ctx.fillStyle = `rgba(42,34,27,${.26 - lift * .1})`;
-  ctx.beginPath(); ctx.roundRect(-20, -46, 40, 60, 6); ctx.fill(); ctx.restore();
-  const body = ctx.createLinearGradient(-20, 0, 20, 0); body.addColorStop(0, '#e9e4dc'); body.addColorStop(.35, '#fbfaf6'); body.addColorStop(1, '#d9d2c7');
-  ctx.beginPath(); ctx.roundRect(-20, -46, 40, 60, 6); ctx.fillStyle = body; ctx.fill(); ctx.strokeStyle = 'rgba(60,50,40,.35)'; ctx.lineWidth = 1; ctx.stroke();
-  ctx.fillStyle = '#2d63b0'; ctx.fillRect(-20.5, -40, 41, 30);
-  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-20.5, -27, 41, 3);
-  ctx.fillStyle = 'rgba(150,140,130,.25)'; ctx.fillRect(-18, 9, 36, 4); // worn graphite-grey rubbing edge
-  ctx.restore();
-}
 function renderFrame(t) {
   ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.drawImage(paperCanvas, 0, 0);
   if (!plan) return;
   advanceInk(t); ctx.drawImage(ink, 0, 0);
-  const rubber = eraserAt(t); if (rubber) drawEraser(rubber);
   const pen = pencilAt(t); if (pen) drawPencil(pen);
 }
 
@@ -837,7 +944,7 @@ function renderFrame(t) {
 function buildAudioEvents(strokes) {
   // One audible "쓱" per gesture: quick strokes are grouped into ~150ms swishes,
   // and every swish is followed by a short silence so the sound never smears into a hiss.
-  const level = { construct:.4, contour:.9, accent:1, fill:.7, hatch:.75, erase:.6 };
+  const level = { construct:.4, contour:.9, accent:1, fill:.7, hatch:.75 };
   const merged = []; let cur = null;
   for (const s of strokes) {
     if (cur && cur.kind === s.kind && s.tDown - cur.end < 45 && cur.end - cur.start < 150) { cur.end = s.tUp; cur.level = Math.max(cur.level, level[s.kind]); continue; }
@@ -850,9 +957,8 @@ function buildAudioEvents(strokes) {
     const next = merged[i + 1];
     if (next) e.end = Math.min(e.end, next.start - 55);
     if (e.end - e.start < 45) { if (next && next.start - e.start < 100) return; e.end = e.start + 45; }
-    flip ^= 1; // alternate stroke direction: slightly brighter on the push, softer on the pull; the eraser rubs lower
-    const freq = e.kind === 'erase' ? (flip ? 1250 : 950) : (flip ? 2600 : 1900);
-    events.push({ start:e.start, end:Math.min(e.end, e.start + 420), level:e.level * (flip ? 1 : .8), freq });
+    flip ^= 1; // alternate stroke direction: slightly brighter on the push, softer on the pull
+    events.push({ start:e.start, end:Math.min(e.end, e.start + 420), level:e.level * (flip ? 1 : .8), freq:flip ? 2600 : 1900 });
   });
   return events;
 }
@@ -943,10 +1049,11 @@ function rebuild() {
   plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value);
   resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
   const faceAt = plan.faceEndMs ? ` 얼굴은 ${(plan.faceEndMs / 1000).toFixed(1)}초에 완성됩니다.` : '';
-  status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
+  const hands = analysis.marks?.hands?.length ?? 0, detailNote = analysis.marks?.mesh ? ` 이목구비${hands ? `와 손 ${hands}개` : ''}를 세밀하게 그립니다.` : '';
+  status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy;
   strength.disabled = busy || styleSelect.value !== 'shade'; // shadow amount only matters when shading is drawn
 }
 let loadToken = 0;
@@ -985,28 +1092,47 @@ canvas.addEventListener('pointerup', event => {
 seconds.addEventListener('input', () => { document.querySelector('#secondsLabel').textContent = `${seconds.value}초`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 strength.addEventListener('input', () => { document.querySelector('#strengthLabel').textContent = `${strength.value}%`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 styleSelect.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; setBusy(false); rebuild(); });
+darkness.addEventListener('input', () => {
+  document.querySelector('#darknessLabel').textContent = `${darkness.value}%`; inkDarkness = Number(darkness.value) / 100;
+  if (!plan) return; // no re-analysis needed: just redraw the finished sketch with the new pressure
+  stopPlayback(); preview.textContent = '미리보기'; resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
+});
 volume.addEventListener('input', () => { document.querySelector('#volumeLabel').textContent = `${volume.value}%`; sound.setVolume(Number(volume.value)); });
-loadFaceDetector().catch(() => {}); loadSegmenter().catch(() => {}); // start fetching the models early so the first photo is quick
+loadFaceDetector().catch(() => {}); loadSegmenter().catch(() => {}); loadLandmarkers().catch(() => {}); // start fetching the models early so the first photo is quick
 preview.addEventListener('click', async () => {
   if (!plan) return;
   if (session) { stopPlayback(); preview.textContent = '미리보기'; renderFrame(plan.totalMs); return; }
   preview.textContent = '정지'; status.textContent = '연필로 한 획씩 스케치하고 있습니다…';
   await play({ onDone:() => { preview.textContent = '미리보기'; status.textContent = '연필 스케치가 완성되었습니다.'; } });
 });
+// Recording formats, best first. MP4 (H.264 + AAC) opens almost everywhere; WebM is the long-standing browser format.
+const RECORD_TYPES = {
+  mp4:  { audio:['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4'], silent:['video/mp4;codecs=avc1', 'video/mp4'] },
+  webm: { audio:['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'], silent:['video/webm;codecs=vp9', 'video/webm'] },
+};
+const supportedType = (format, withAudio) => window.MediaRecorder && RECORD_TYPES[format][withAudio ? 'audio' : 'silent'].find(type => MediaRecorder.isTypeSupported(type));
+for (const option of formatSelect.options) { // grey out a format this browser cannot record
+  if (!supportedType(option.value, true) && !supportedType(option.value, false)) { option.disabled = true; option.textContent += ' — 이 브라우저 미지원'; }
+}
+if (formatSelect.selectedOptions[0]?.disabled) formatSelect.value = [...formatSelect.options].find(o => !o.disabled)?.value ?? 'webm';
+const updateExportLabel = () => { exportButton.textContent = `${formatSelect.value.toUpperCase()} 영상 저장`; };
+formatSelect.addEventListener('change', updateExportLabel); updateExportLabel();
 exportButton.addEventListener('click', async () => {
   if (!plan || !window.MediaRecorder) return;
   setBusy(true); preview.textContent = '미리보기';
-  const withAudio = soundToggle.checked && sound.ensure();
+  const withAudio = soundToggle.checked && sound.ensure(), wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
   const tracks = [...canvas.captureStream(30).getVideoTracks(), ...(withAudio ? sound.stream.stream.getAudioTracks() : [])];
-  const types = withAudio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] : ['video/webm;codecs=vp9', 'video/webm'];
-  const recorder = new MediaRecorder(new MediaStream(tracks), { mimeType:types.find(type => MediaRecorder.isTypeSupported(type)) });
+  const mimeType = supportedType(wanted, withAudio) || supportedType(other, withAudio);
+  const recorder = new MediaRecorder(new MediaStream(tracks), mimeType ? { mimeType } : {});
+  const actual = (recorder.mimeType || mimeType || '').includes('mp4') ? 'mp4' : 'webm';
   const parts = []; recorder.ondataavailable = event => event.data.size && parts.push(event.data);
   recorder.onstop = () => {
-    const url = URL.createObjectURL(new Blob(parts, { type:'video/webm' })), link = document.createElement('a');
-    link.href = url; link.download = 'pencil-sketch.webm'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1500);
-    setBusy(false); status.textContent = '영상 저장이 완료되었습니다.';
+    const url = URL.createObjectURL(new Blob(parts, { type:`video/${actual}` })), link = document.createElement('a');
+    link.href = url; link.download = `pencil-sketch.${actual}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setBusy(false);
+    status.textContent = actual === wanted ? `${actual.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 녹화를 지원하지 않아 ${actual.toUpperCase()}로 저장했습니다.`;
   };
-  status.textContent = '연필 스케치 영상을 녹화하고 있습니다… 녹화 중에는 이 탭을 계속 띄워 두세요.';
+  status.textContent = `${actual.toUpperCase()} 영상을 녹화하고 있습니다… 녹화 중에는 이 탭을 계속 띄워 두세요.`;
   renderFrame(0); recorder.start(250);
   await play({ onDone:() => setTimeout(() => recorder.stop(), 250) });
 });
