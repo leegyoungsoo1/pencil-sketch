@@ -9,7 +9,8 @@ main { width:min(1120px,calc(100% - 36px)); margin:0 auto; padding:52px 0 72px; 
 .spinner { width:46px; height:46px; border-radius:50%; border:4px solid #ffffff2a; border-top-color:#e2bd80; animation:spin .9s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .intro { grid-column:1/-1; margin-bottom:-10px; }.eyebrow { color:#e2bd80; letter-spacing:.16em; font-size:.72rem; font-weight:700; margin:0 0 8px; }
-h1 { font-size:clamp(1.8rem,4vw,3.2rem); letter-spacing:-.06em; margin:0 0 10px; } .intro>p:last-child { color:#b8bbc5; margin:0; }
+h1 { font-size:clamp(1.8rem,4vw,3.2rem); letter-spacing:-.06em; margin:0 0 10px; display:flex; align-items:center; gap:.35em; }
+h1 .logo { width:1.1em; height:1.1em; border-radius:22%; box-shadow:0 4px 14px #0006; flex:none; } .intro>p:last-child { color:#b8bbc5; margin:0; }
 .controls { background:#1a1b22; border:1px solid #343640; border-radius:18px; padding:22px; display:grid; gap:20px; }
 .controls label { display:grid; gap:9px; color:#dcdee5; font-size:.88rem; }
 .controls label:has(> .num) { grid-template-columns:1fr auto; align-items:center; } .controls label:has(> .num) input[type="range"] { grid-column:1 / -1; }
