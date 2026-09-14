@@ -11,6 +11,7 @@ const titleInput = document.querySelector('#title');
 const introToggle = document.querySelector('#intro');
 const messageInput = document.querySelector('#message');
 const talkToggle = document.querySelector('#talk');
+const handToggle = document.querySelector('#hand');
 const soundToggle = document.querySelector('#sound');
 const volume = document.querySelector('#volume');
 const preview = document.querySelector('#preview');
@@ -1819,9 +1820,43 @@ function renderFrame(t) {
   onSheet(() => { ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawSheet(t); });
   drawTalk(t);
   drawPolaroid(t);
+  const pen = plan ? pencilAt(t) : null, hand = pen && handToggle?.checked && handImage.naturalWidth > 0;
+  if (hand) drawHand(pen); // the arm passes under the shorts title, like a caption laid over the video
   drawTitle();
-  if (!plan) return;
-  const pen = pencilAt(t); if (pen) onSheet(() => drawPencil(pen));
+  if (pen && !hand) onSheet(() => drawPencil(pen));
+}
+// ───────────────────────── drawing hand (experiment) ─────────────────────────
+// A real right hand and forearm (a photo with the background removed, the sleeve continued past the photo's bottom edge)
+// holds the pencil. Its graphite point rides the stroke; the arm leans in from the lower right and casts a soft shadow.
+const HAND = { src:'assets/hand-right.webp', tip:{ x:16.6, y:243.1 }, pencilLength:423.6, screenPencil:380 };
+const handImage = new Image(); let handShadow = null;
+handImage.src = HAND.src;
+handImage.decode().then(() => {
+  // Shadow: the silhouette, darkened and blurred once at quarter size.
+  const q = 4, w = Math.ceil(handImage.width / q), h = Math.ceil(handImage.height / q), pad = 12;
+  const shape = document.createElement('canvas'); shape.width = w + pad * 2; shape.height = h + pad * 2;
+  const sg = shape.getContext('2d'); sg.drawImage(handImage, pad, pad, w, h); sg.globalCompositeOperation = 'source-in'; sg.fillStyle = '#1e140c'; sg.fillRect(0, 0, shape.width, shape.height);
+  handShadow = document.createElement('canvas'); handShadow.width = shape.width; handShadow.height = shape.height;
+  const hg = handShadow.getContext('2d'); hg.filter = 'blur(5px)'; hg.drawImage(shape, 0, 0);
+  handShadow.q = q; handShadow.pad = pad;
+  redrawStill();
+}).catch(() => {});
+function drawHand(pen) {
+  const tx = BOARD.x + pen.x * BOARD.s, ty = BOARD.y + pen.y * BOARD.s, lift = pen.lift, scale = HAND.screenPencil / HAND.pencilLength;
+  // Lean: the arm lies flatter when the point is on the left, so the photo's cut-off elbow side always stays off the frame.
+  const angle = -.32 + .42 * clamp((tx - BOARD.x) / BOARD.w);
+  if (handShadow) {
+    // The shadow meets the point on the paper and falls further away with distance from it, and further still when lifted.
+    const { q, pad } = handShadow, grow = 1.035 + lift * .03;
+    ctx.save(); ctx.globalAlpha = .3 - lift * .08;
+    ctx.translate(tx + 3 + lift * 22, ty + 5 + lift * 30); ctx.rotate(angle); ctx.scale(scale * grow, scale * grow);
+    ctx.drawImage(handShadow, -HAND.tip.x - pad * q, -HAND.tip.y - pad * q, handShadow.width * q, handShadow.height * q);
+    ctx.restore();
+  }
+  const lifted = scale * (1 + lift * .03); // a lifted hand comes a little toward the camera
+  ctx.save(); ctx.translate(tx - lift * 8, ty - lift * 14); ctx.rotate(angle); ctx.scale(lifted, lifted);
+  ctx.drawImage(handImage, -HAND.tip.x, -HAND.tip.y);
+  ctx.restore();
 }
 // ───────────────────────── shorts title ─────────────────────────
 const TITLE_FONT = '"Black Han Sans", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
@@ -2045,7 +2080,7 @@ function rebuild() {
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy;
   strength.disabled = busy || styleSelect.value === 'line'; // shadow amount only matters when shading is drawn
 }
 // Busy overlay on the canvas while a photo is analysed: a spinner, the current step, and the elapsed seconds.
@@ -2133,6 +2168,7 @@ styleSelect.addEventListener('change', async () => {
 signatureToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 introToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 talkToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
+handToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; redrawStill(); });
 let messageTimer = 0; // re-plan shortly after typing stops, not on every keystroke
 messageInput?.addEventListener('input', () => { clearTimeout(messageTimer); messageTimer = setTimeout(() => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); }, 350); });
 titleInput?.addEventListener('input', () => {
@@ -2276,6 +2312,7 @@ exportButton.addEventListener('click', async () => {
   scrollToCanvas();
   stopPlayback(); setBusy(true); preview.textContent = '미리보기';
   await ensureTitleFont(); // never put a first frame with fallback glyphs in the title
+  if (handToggle?.checked) await handImage.decode().catch(() => {});
   const withAudio = soundToggle.checked, wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
   const token = session = {}; keepAwake(true); // `session` keeps still-preview redraws from touching the canvas mid-build
   try {
