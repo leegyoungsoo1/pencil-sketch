@@ -356,6 +356,10 @@ function chooseCrop(img, base, face, hands = []) {
     w = Math.min(natW, Math.max(ux1 - ux0, (uy1 - uy0) * aspect)); h = Math.min(natH, w / aspect); w = h * aspect;
     x = clamp((ux0 + ux1) / 2 - w / 2, 0, natW - w); y = clamp(Math.min(uy0, top - h * .2), 0, natH - h);
   }
+  // Never at the face's expense: when a far-off hand can't share the frame, the face stays whole and the hand is cut.
+  const fx0 = (face.x - face.rx * 1.15) * s, fx1 = (face.x + face.rx * 1.15) * s, fy0 = (face.y - face.ry * 1.3) * s, fy1 = (face.y + face.ry * 1.1) * s;
+  if (fx1 - fx0 <= w) x = clamp(clamp(x, fx1 - w, fx0), 0, natW - w);
+  if (fy1 - fy0 <= h) y = clamp(clamp(y, fy1 - h, fy0), 0, natH - h);
   if (w > natW * .92 && h > natH * .92) return null;
   return { x, y, w, h };
 }
@@ -818,10 +822,18 @@ function traceLineArt(A) {
   // A crisp edge is much steeper at a fine scale than a coarse one; a defocused edge is equally gentle at both.
   const grad = f => { const m = new Float32Array(n); for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) { const i = y * gw + x; m[i] = Math.hypot(f[i + 1] - f[i - 1], f[i + gw] - f[i - gw]); } return m; };
   const fineG = blur(grad(b1), gw, gh, 2), coarseG = blur(grad(b4), gw, gh, 2), protect = Z.EYE | Z.IRIS | Z.BROW | Z.LIPS | Z.NOSE | Z.JAW | Z.HAND;
+  // Judged against this photo's own face lines: a film still or a softly lit photo is gentle everywhere, so the bar drops
+  // with its typical line sharpness and only lines clearly softer than the rest count as out of focus. Crisp photos
+  // (typical sharpness 1.6 and up) keep the original bar.
+  const sharpness = []; for (let i = 0; i < n; i += 2) if (faceW[i] >= .5 && ink[i] > .28) sharpness.push(fineG[i] / (coarseG[i] + 1.5));
+  sharpness.sort((a, z) => a - z);
+  const sharpScale = clamp((sharpness[sharpness.length >> 1] ?? 1.6) / 1.6, .55, 1), soft0 = 1.2 * sharpScale, softSpan = .35 * sharpScale;
+  // The figure's own outline against the background — a profile's nose, lips and chin — is never a stray edge.
+  const outline = i => !!person && person[i] > .12 && person[i] < .88;
   let softened = 0;
   for (let i = 0; i < n; i++) {
-    if (faceW[i] < .5 || zone[i] & protect || ink[i] < .1) continue;
-    const sharp = fineG[i] / (coarseG[i] + 1.5), keepInk = clamp((sharp - 1.2) / .35);
+    if (faceW[i] < .5 || zone[i] & protect || ink[i] < .1 || outline(i)) continue;
+    const sharp = fineG[i] / (coarseG[i] + 1.5), keepInk = clamp((sharp - soft0) / softSpan);
     if (keepInk < 1) { ink[i] *= keepInk; softened++; }
   }
   A.softened = softened;
