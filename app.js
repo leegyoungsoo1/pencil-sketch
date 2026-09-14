@@ -2178,7 +2178,7 @@ function rebuild() {
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (signatureInput) signatureInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy; if (polaroidToggle) polaroidToggle.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (signatureInput) signatureInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy; if (polaroidToggle) polaroidToggle.disabled = busy; if (suggestButton) suggestButton.disabled = busy; if (singerSelect) singerSelect.disabled = busy;
   strength.disabled = busy || styleSelect.value === 'line'; // shadow amount only matters when shading is drawn
   for (const range of SLIDERS) { const box = numberBox(range); if (box) box.disabled = range.disabled; }
 }
@@ -2217,6 +2217,7 @@ photoInput.addEventListener('change', event => {
   image.onerror = () => { if (token !== loadToken) return; settle(); hideBusy(); status.textContent = '사진을 열 수 없습니다. JPG, PNG, WEBP 사진을 선택해 주세요.'; };
   image.onload = async () => {
     stopPlayback(); source = image; analysis = null; plan = null; renderFrame(0);
+    if (autoSuggest?.checked) fillSuggestion(autoFields());
     const step1 = detectorReady ? '얼굴과 인물을 찾고 있습니다' : '얼굴 인식 AI를 불러오는 중입니다\n(처음 한 번만 조금 걸립니다)';
     status.textContent = step1.replace('\n', ' '); showBusy(step1); await nextPaint();
     try {
@@ -2288,6 +2289,44 @@ titleInput?.addEventListener('input', () => {
   redrawStill();
 });
 document.fonts?.load(`100px ${TITLE_FONT}`, '가나다 ABC').then(redrawStill).catch(() => {}); // the title font arrives from the web
+// ───────────────────────── fan phrase suggestions ─────────────────────────
+// A title and a handwritten line for the chosen singer, from phrases.js: the singer's own phrases (drawn twice as often) plus
+// the shared ones with the name filled in. Choosing a photo fills them automatically, but only into fields that are empty or
+// still hold an earlier suggestion — never over words the user typed. "다른 추천" always draws both again.
+const singerSelect = document.querySelector('#singer'), suggestButton = document.querySelector('#suggest'), autoSuggest = document.querySelector('#autoSuggest');
+const suggested = { title:false, message:false }; // true while a field holds a suggestion rather than the user's own words
+const fieldInput = field => field === 'title' ? titleInput : messageInput;
+function pickPhrase(field, current) {
+  if (typeof FAN_PHRASES === 'undefined') return null;
+  const kind = field === 'title' ? 'titles' : 'lines', singer = singerSelect.value, own = singer === '공통' ? [] : FAN_PHRASES[singer]?.[kind] ?? [];
+  const shared = FAN_PHRASES.공통[kind].filter(p => singer !== '공통' || !p.includes('{name}')).map(p => p.replaceAll('{name}', singer));
+  const pool = [...own, ...own, ...shared].filter(p => p !== current);
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+}
+function fillSuggestion(fields) {
+  let changed = false;
+  for (const field of fields) {
+    const input = fieldInput(field), next = pickPhrase(field, input.value); if (!next) continue;
+    input.value = next; suggested[field] = changed = true;
+  }
+  if (!changed) return;
+  stopPlayback(); preview.textContent = '미리보기';
+  if (analysis) rebuild(); else redrawStill();
+}
+const autoFields = () => ['title', 'message'].filter(field => suggested[field] || !fieldInput(field).value.trim());
+titleInput?.addEventListener('input', () => { suggested.title = false; });
+messageInput?.addEventListener('input', () => { suggested.message = false; });
+suggestButton?.addEventListener('click', () => fillSuggestion(['title', 'message']));
+singerSelect?.addEventListener('change', () => {
+  try { localStorage.setItem('pencil.singer', singerSelect.value); } catch {}
+  fillSuggestion(['title', 'message'].filter(field => suggested[field])); // a new singer replaces only the suggestions
+});
+autoSuggest?.addEventListener('change', () => { try { localStorage.setItem('pencil.autoSuggest', autoSuggest.checked ? '1' : '0'); } catch {} });
+try { // remember the singer and the auto-fill choice on this device
+  const singer = localStorage.getItem('pencil.singer'), auto = localStorage.getItem('pencil.autoSuggest');
+  if (singer && [...singerSelect.options].some(o => o.value === singer)) singerSelect.value = singer;
+  if (auto !== null) autoSuggest.checked = auto === '1';
+} catch {}
 darkness.addEventListener('input', () => {
   inkDarkness = Number(darkness.value) / 100;
   if (!plan) return; // no re-analysis needed: just redraw the finished sketch with the new pressure

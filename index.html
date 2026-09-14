@@ -17,6 +17,19 @@
     <section class="controls quick" aria-label="사진과 문구">
       <label class="upload" for="photo"><span>사진 선택</span><small id="fileName">JPG · PNG · WEBP</small></label>
       <input id="photo" type="file" accept="image/*" />
+      <div class="suggest">
+        <label>팬심 문구 추천
+          <select id="singer">
+            <option value="임영웅">임영웅</option>
+            <option value="이찬원">이찬원</option>
+            <option value="영탁">영탁</option>
+            <option value="공통">가수 이름 없이</option>
+          </select>
+        </label>
+        <button id="suggest" type="button">🎲 다른 추천</button>
+        <label class="check"><input id="autoSuggest" type="checkbox" checked /> 사진 올리면 제목·손글씨 자동 추천</label>
+        <small class="note">팬이 전하는 마음으로 쓴 문구예요 (가수가 한 말이 아닙니다)</small>
+      </div>
       <label>영상 제목 <small class="note">최대 2줄 · Enter로 줄바꿈</small><textarea id="title" rows="2" maxlength="60" placeholder="예) 임영웅 연필 초상화&#10;20초 만에 그려보기"></textarea></label>
       <label>손글씨 한 줄 <small class="note">그림 완성 후 빈 곳에 연필로 씁니다</small><input id="message" type="text" maxlength="24" placeholder="예) 오늘하루 행복하세요!" /></label>
       <label>서명 <small class="note">왼쪽 위에 필기체로 · 끝에 . 을 넣으면 "탁" 점</small><input id="signatureText" type="text" maxlength="20" value="David Lee." placeholder="예) David Lee." /></label>
@@ -56,6 +69,7 @@
       <div class="actions"><button id="preview" type="button">미리보기</button><button id="export" type="button" class="primary">MP4 영상 저장</button></div>
     </section>
   </main>
+  <script src="phrases.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

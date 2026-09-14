@@ -13,6 +13,9 @@ h1 { font-size:clamp(1.8rem,4vw,3.2rem); letter-spacing:-.06em; margin:0 0 10px;
 .controls { background:#1a1b22; border:1px solid #343640; border-radius:18px; padding:22px; display:grid; gap:20px; }
 .controls label { display:grid; gap:9px; color:#dcdee5; font-size:.88rem; }
 .controls label:has(> .num) { grid-template-columns:1fr auto; align-items:center; } .controls label:has(> .num) input[type="range"] { grid-column:1 / -1; }
+.suggest { display:grid; grid-template-columns:1fr auto; align-items:end; gap:10px 10px; padding:12px 14px; border:1px solid #3a3c47; border-radius:12px; background:#20212a; }
+.suggest > label:first-child { gap:7px; } .suggest .check, .suggest .note { grid-column:1 / -1; } .suggest .note { float:none; margin-top:-4px; }
+.suggest button { padding:10px 14px; white-space:nowrap; }
 .num { display:inline-flex; align-items:center; gap:5px; color:#e2bd80; font-variant-numeric:tabular-nums; }
 .num input { width:4.6em; font:inherit; color:#eeeef2; background:#292b34; border:1px solid #595d6a; border-radius:8px; padding:4px 6px; text-align:right; } .num input:focus { outline:none; border-color:#e2bd80; } .num input:disabled { opacity:.45; }.controls output { float:right; color:#e2bd80; font-variant-numeric:tabular-nums; }
 .upload { cursor:pointer; border:1px dashed #686d7c; border-radius:12px; padding:17px; transition:.2s; }.upload:hover { border-color:#e2bd80; background:#22232c; }.upload span { font-weight:700; }.upload small { color:#9297a6; }
