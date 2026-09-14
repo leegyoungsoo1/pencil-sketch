@@ -10,8 +10,10 @@ const signatureToggle = document.querySelector('#signature');
 const titleInput = document.querySelector('#title');
 const introToggle = document.querySelector('#intro');
 const messageInput = document.querySelector('#message');
+const signatureInput = document.querySelector('#signatureText');
 const talkToggle = document.querySelector('#talk');
 const handToggle = document.querySelector('#hand');
+const polaroidToggle = document.querySelector('#polaroidSketch');
 const soundToggle = document.querySelector('#sound');
 const volume = document.querySelector('#volume');
 const preview = document.querySelector('#preview');
@@ -243,7 +245,33 @@ const sceneCanvas = (() => {
   g.fillStyle = vig; g.fillRect(0, 0, VIEW_W, VIEW_H);
   return layer;
 })();
-const onSheet = fn => { ctx.save(); ctx.translate(BOARD.x, BOARD.y); ctx.scale(BOARD.s, BOARD.s); fn(); ctx.restore(); };
+// The instant-film card: the intro photo is shown on it, and in the "polaroid" style the sketch itself is drawn on it.
+// Resting pose on the canvas board, and the square picture window's centre relative to the card's centre.
+const POLAROID = (() => {
+  const img = Math.round(BOARD.w * .68), border = Math.round(img * .055), bottom = Math.round(img * .26), tape = 32;
+  const cardW = img + border * 2, cardH = img + border + bottom, angle = -.085, center = { x:VIEW_W / 2, y:BOARD.y + BOARD.h * .47 };
+  const off = -(cardH + tape) / 2 + tape + border + img / 2; // picture centre below the card centre (the tape strip sits on top)
+  return { img, border, bottom, tape, cardW, cardH, angle, center, window:{ x:center.x - Math.sin(angle) * off, y:center.y + Math.cos(angle) * off } };
+})();
+// Sheet → video frame. Normally the sheet fills the canvas board; in the polaroid style a square window of the sheet is
+// shown, scaled and tilted, in the card's picture area (plan.polaroid holds that window).
+function applySheet(g) {
+  const p = plan?.polaroid;
+  if (!p) { g.translate(BOARD.x, BOARD.y); g.scale(BOARD.s, BOARD.s); return; }
+  g.translate(POLAROID.window.x, POLAROID.window.y); g.rotate(POLAROID.angle); g.scale(p.s, p.s); g.translate(-p.cx, -p.cy);
+}
+function sheetToView(x, y) {
+  const p = plan?.polaroid; if (!p) return { x:BOARD.x + x * BOARD.s, y:BOARD.y + y * BOARD.s };
+  const dx = (x - p.cx) * p.s, dy = (y - p.cy) * p.s, c = Math.cos(POLAROID.angle), s = Math.sin(POLAROID.angle);
+  return { x:POLAROID.window.x + dx * c - dy * s, y:POLAROID.window.y + dx * s + dy * c };
+}
+function viewToSheet(x, y) {
+  const p = plan?.polaroid; if (!p) return { x:(x - BOARD.x) / BOARD.s, y:(y - BOARD.y) / BOARD.s };
+  const dx = x - POLAROID.window.x, dy = y - POLAROID.window.y, c = Math.cos(POLAROID.angle), s = Math.sin(POLAROID.angle);
+  return { x:p.cx + (dx * c + dy * s) / p.s, y:p.cy + (-dx * s + dy * c) / p.s };
+}
+const onSheet = fn => { ctx.save(); applySheet(ctx); fn(); ctx.restore(); };
+const clipWindow = () => { const p = plan?.polaroid; if (p) { ctx.beginPath(); ctx.rect(p.x0, p.y0, p.side, p.side); ctx.clip(); } };
 let GRAPHITE_MEAN = 0;
 const graphite = (() => {
   const tile = document.createElement('canvas'); tile.width = tile.height = tooth.size;
@@ -259,6 +287,10 @@ const graphite = (() => {
 const ink = document.createElement('canvas'); ink.width = W; ink.height = H;
 const inkCtx = ink.getContext('2d');
 inkCtx.strokeStyle = inkCtx.createPattern(graphite, 'repeat'); inkCtx.lineCap = 'butt';
+// Polaroid style: the handwritten line and the signature go on the card's white margin, outside the picture window.
+const notes = document.createElement('canvas'); notes.width = W; notes.height = H;
+const notesCtx = notes.getContext('2d');
+notesCtx.strokeStyle = notesCtx.createPattern(graphite, 'repeat'); notesCtx.lineCap = 'butt';
 // AI style: the pencil's path is painted into a reveal mask; the AI graphite layer shows through wherever it has passed.
 const reveal = document.createElement('canvas'); reveal.width = W; reveal.height = H;
 const revealCtx = reveal.getContext('2d');
@@ -1402,18 +1434,37 @@ function orderHatching(list, from) {
   }
   return out;
 }
-function placeSignature() {
-  // Always signed in the top-left corner of the canvas, like an artist's mark.
-  const width = W * .28, height = width / SIGNATURE.aspect, margin = 24;
-  const corner = { x:PAD + margin, y:PAD + margin + 6 };
-  const to = (x, y) => ({ x:corner.x + x * height, y:corner.y + y * height });
-  return { paths:SIGNATURE.paths.map(flat => { const pts = []; for (let k = 0; k < flat.length; k += 2) pts.push(to(flat[k], flat[k + 1])); return pts; }), dot:to(...SIGNATURE.dot), height };
+// The signature is whatever the user types. "David Lee." keeps the hand-shaped Allura skeleton above; any other name is
+// written in a script font (Allura for Latin letters, Nanum Brush Script for Hangul) and traced like the handwritten line.
+// A trailing full stop becomes the final "탁" tap.
+const SIGN_FONT = '"Allura", "Nanum Brush Script", cursive', DEFAULT_SIGNATURE = 'David Lee.';
+const signGlyphCache = new Map();
+function signatureGlyphs(text) {
+  const typed = (text ?? '').trim() || DEFAULT_SIGNATURE;
+  if (typed === DEFAULT_SIGNATURE) return { aspect:SIGNATURE.aspect, paths:SIGNATURE.paths.map(flat => { const pts = []; for (let k = 0; k < flat.length; k += 2) pts.push({ x:flat[k], y:flat[k + 1] }); return pts; }), dot:{ x:SIGNATURE.dot[0], y:SIGNATURE.dot[1] } };
+  const name = typed.replace(/\.+$/, '').trim(), glyphs = name ? traceGlyphs(name, SIGN_FONT, signGlyphCache) : null;
+  if (!glyphs) return null;
+  return { aspect:glyphs.aspect, paths:glyphs.strokes, dot:name.length < typed.length ? { x:glyphs.aspect + .14, y:.82 } : null };
+}
+function signatureBox(sign, frame) {
+  const span = sign.aspect + (sign.dot ? .3 : 0);
+  if (frame) { // polaroid: small, at the right end of the white margin, below the handwritten line
+    const height = Math.min(26, frame.side * .45 / span), width = height * span;
+    return { x:frame.x0 + frame.side - 22 - width, y:frame.y0 + frame.side + frame.margin - 22 - height * 1.25, height, width };
+  }
+  // Top-left corner of the canvas, like an artist's mark: long names get narrower letters, short ones stop at a signature's height.
+  const height = Math.min(W * .28 / SIGNATURE.aspect, W * .4 / sign.aspect), margin = 24; // "David Lee." keeps its original size
+  return { x:PAD + margin, y:PAD + margin + 6, height, width:height * span };
+}
+function placeSignature(sign, frame) {
+  const box = signatureBox(sign, frame), to = p => ({ x:box.x + p.x * box.height, y:box.y + p.y * box.height });
+  return { paths:sign.paths.map(path => path.map(to)), dot:sign.dot ? to(sign.dot) : null, height:box.height };
 }
 const SIGN_MS = 3000; // travel + name + pause + tap + a moment before the pencil leaves, at full pace
 const signPace = totalMs => clamp(totalMs / 12000, .55, 1); // short videos sign a little faster
-function signatureStrokes(strokes, startMs, rand, pace) {
+function signatureStrokes(sign, startMs, rand, pace, frame) {
   // The name is written in one quick, continuous gesture, then a short pause, a lift — and the full stop: "탁".
-  const { paths, dot, height } = placeSignature(), out = [];
+  const { paths, dot, height } = placeSignature(sign, frame), out = [];
   for (const raw of paths) {
     const s = finalizeStroke({ raw, kind:'sign', fine:true, face:0, strength:1 }, rand, 0, 0);
     if (s) out.push(Object.assign(s, { width:1.5, alpha:.95, ghost:.25 }));
@@ -1427,6 +1478,7 @@ function signatureStrokes(strokes, startMs, rand, pace) {
     t += prev ? (s.chain ? 10 : 35 + gap * .5) * pace : 0;
     s.tDown = t; t += writeMs * s.len / total; s.tUp = t; prev = s;
   }
+  if (!dot) return out;
   // The dot: a tight little press of graphite, placed after a beat.
   const ring = []; for (let a = 0; a <= Math.PI * 5; a += Math.PI / 6) { const r = 2.4 * (1 - a / (Math.PI * 6)); ring.push({ x:dot.x + Math.cos(a) * r, y:dot.y + Math.sin(a) * r }); }
   const tap = finalizeStroke({ raw:ring, kind:'dot', fine:true, face:0, strength:1 }, rand, 0, 0);
@@ -1442,11 +1494,12 @@ function signatureStrokes(strokes, startMs, rand, pace) {
 // Nanum Pen Script (OFL): each character is rendered large, thinned to its centreline and traced into pen strokes.
 const MESSAGE_FONT = '"Nanum Pen Script", "Malgun Gothic", sans-serif', MESSAGE_PX = 200;
 const messageGlyphCache = new Map();
-function messageGlyphs(text) {
+const messageGlyphs = text => traceGlyphs(text, MESSAGE_FONT, messageGlyphCache);
+function traceGlyphs(text, font, cache) {
   // Returns strokes in "em" units (height of the rendered line = 1), in writing order, or null while the font loads.
-  const face = `${MESSAGE_PX}px ${MESSAGE_FONT}`;
+  const face = `${MESSAGE_PX}px ${font}`;
   if (document.fonts && !document.fonts.check(face, text)) { document.fonts.load(face, text).then(() => { if (!session) rebuild(); }).catch(() => {}); return null; }
-  if (messageGlyphCache.has(text)) return messageGlyphCache.get(text);
+  if (cache.has(text)) return cache.get(text);
   const measure = document.createElement('canvas').getContext('2d'); measure.font = face;
   const w = Math.ceil(measure.measureText(text).width) + 40, h = Math.round(MESSAGE_PX * 1.3), c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d', { willReadFrequently:true }); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = '#000'; g.font = face; g.textBaseline = 'middle';
@@ -1467,10 +1520,16 @@ function messageGlyphs(text) {
   for (const o of ordered) for (const q of o.pts) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
   const em = Math.max(1, y1 - y0);
   const result = ordered.length ? { aspect:(x1 - x0) / em, strokes:ordered.map(o => chaikin(simplify(o.pts, 1.1)).map(q => ({ x:(q.x - x0) / em, y:(q.y - y0) / em }))) } : null;
-  messageGlyphCache.set(text, result);
+  cache.set(text, result);
   return result;
 }
-function placeMessage(glyphs, strokes, A) {
+function placeMessage(glyphs, strokes, A, sign, frame) {
+  if (frame) {
+    // Polaroid: the line is written across the card's white margin, like a caption under a snapshot.
+    const height = Math.min(54, (frame.side - 48) / glyphs.aspect, frame.margin * .38), width = height * glyphs.aspect;
+    const x = frame.x0 + (frame.side - width) / 2, y = frame.y0 + frame.side + (sign ? 14 : (frame.margin - height) / 2 - 4);
+    return glyphs.strokes.map(p => p.map(q => ({ x:x + q.x * height, y:y + q.y * height })));
+  }
   // Find the emptiest place on the canvas for the line: never across the face or hands, avoiding the figure where
   // there is bare paper, clear of the signature — and a little smaller when only a small gap is free.
   const G = 20, cols = Math.ceil(W / G), rows = Math.ceil(H / G), cost = new Float32Array(cols * rows);
@@ -1485,7 +1544,7 @@ function placeMessage(glyphs, strokes, A) {
     if (inside && handW[i] > .2) cost[cy * cols + cx] += 400;
     if (inside) cost[cy * cols + cx] += subject[i] * 6;
   }
-  const maxW = W - PAD * 2 - 40, sig = { x1:PAD + W * .28 + 60, y1:PAD + 110 };
+  const box = sign ? signatureBox(sign) : null, maxW = W - PAD * 2 - 40, sig = box ? { x1:box.x + box.width + 25, y1:box.y + 80 } : { x1:0, y1:0 };
   let best = null;
   for (const size of [62, 52, 44]) {
     let height = size, width = height * glyphs.aspect;
@@ -1504,8 +1563,8 @@ function placeMessage(glyphs, strokes, A) {
   return glyphs.strokes.map(p => p.map(q => ({ x:best.x + q.x * best.height, y:best.y + q.y * best.height })));
 }
 const messageMs = (text, pace) => text ? clamp(500 + [...text].length * 190, 1400, 3800) * pace + 500 : 0; // writing + travel
-function messageStrokes(glyphs, strokes, startMs, rand, pace, text, A) {
-  const paths = placeMessage(glyphs, strokes, A), out = [];
+function messageStrokes(glyphs, strokes, startMs, rand, pace, text, A, sign, frame) {
+  const paths = placeMessage(glyphs, strokes, A, sign, frame), out = [];
   for (const raw of paths) {
     const s = finalizeStroke({ raw, kind:'sign', fine:true, face:0, strength:1 }, rand, 0, 0);
     if (!s) continue;
@@ -1602,12 +1661,13 @@ function warpMouth(talk, open, src, paper) {
     }
   }
   buf.canvas.getContext('2d').putImageData(buf.image, 0, 0);
-  onSheet(() => ctx.drawImage(buf.canvas, 0, 0, w, h, x0, y0, w, h));
+  onSheet(() => { clipWindow(); ctx.drawImage(buf.canvas, 0, 0, w, h, x0, y0, w, h); });
 }
 function closeEye(e, blink) {
   // A blink in pencil: the open eye is covered with paper and a closed-lid curve (with a few lashes) is drawn over it.
   const rx = e.w * .62, ry = e.w * .34, a = Math.min(1, blink * 1.6);
   onSheet(() => {
+    clipWindow();
     ctx.save();
     ctx.globalAlpha = a;
     ctx.beginPath(); ctx.ellipse(e.x, e.y, rx, ry, 0, 0, Math.PI * 2); ctx.clip();
@@ -1622,8 +1682,19 @@ function closeEye(e, blink) {
     ctx.restore();
   });
 }
-function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = true, showIntro = true, message = '', talking = false) {
+function polaroidWindow(A) {
+  // The square of the sheet shown in the card's picture: a portrait crop around the face, like a snapshot. What falls
+  // outside is cut off, as on a real polaroid. It stays clear of the sheet's bottom so the white margin fits below it.
+  const side = 600, s = POLAROID.img / side, margin = POLAROID.bottom / s;
+  const fx = A.b.x + A.face.x, fy = A.b.y + A.face.y;
+  const cx = clamp(fx, side / 2, W - side / 2), cy = clamp(fy + side * .04, side / 2, H - side / 2 - margin);
+  return { side, s, cx, cy, x0:cx - side / 2, y0:cy - side / 2, margin };
+}
+function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = null, showIntro = true, message = '', talking = false, polaroid = false) { // signature: from signatureGlyphs(), or null
   const density = densityPercent / 100, rand = random(1234), { b, face } = A;
+  const frame = polaroid ? polaroidWindow(A) : null;
+  // In the polaroid style, lines that would fall outside the picture are never planned: the pencil only works where it shows.
+  const inFrame = s => { if (!frame) return true; let k = 0; for (let i = 0; i < s.n; i += 2) if (s.x[i] > frame.x0 - 4 && s.x[i] < frame.x0 + frame.side + 4 && s.y[i] > frame.y0 - 4 && s.y[i] < frame.y0 + frame.side + 4) k++; return k * 2 >= s.n * .35; };
   const totalMs = durationSec * 1000, outroMs = Math.min(1200, totalMs * .07);
   // Opening: the reference photo sits on the canvas for a moment, then fades away to bare paper before the pencil comes in.
   const intro = showIntro ? { hold:Math.min(1000, totalMs * .08), fade:Math.min(700, totalMs * .06) } : null;
@@ -1635,7 +1706,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const drawMs = totalMs - leadMs - outroMs - signMs - writeMsgMs;
   let capacity = (drawMs / 1000) * SPEED;
   const cost = s => strokeCost(s.kind, s.len);
-  const prep = (list, kind) => list.map(s => finalizeStroke(kind ? { ...s, kind } : s, rand, b.x, b.y)).filter(Boolean);
+  const prep = (list, kind) => list.map(s => finalizeStroke(kind ? { ...s, kind } : s, rand, b.x, b.y)).filter(s => s && inFrame(s));
 
   const ai = style === 'ai' && A.ai; // AI line art replaces the traced contours; otherwise the classic engine
   const sourceContours = ai ? A.ai.contours : A.contours;
@@ -1679,7 +1750,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
     const ax = z.x - a.x, ay = z.y - a.y, al = Math.hypot(ax, ay) || 1, side = (rand() < .5 ? -1 : 1) * (1.5 + rand() * 1.8);
     const raw = [ext(a, loose[1]), ...loose.slice(1, -1), ext(z, loose[loose.length - 2])].map(p => ({ x:p.x - ay / al * side + (rand() - .5), y:p.y + ax / al * side + (rand() - .5) }));
     const c = finalizeStroke({ raw, kind:'construct', face:s.face, strength:s.strength }, rand, b.x, b.y);
-    if (!c || constructUsed + cost(c) > constructBudget) continue;
+    if (!c || !inFrame(c) || constructUsed + cost(c) > constructBudget) continue;
     construct.push(c); constructUsed += cost(c);
   }
   // Shares of the time budget. Lines always come first; shading only gets what the "선 + 그림자" style allows.
@@ -1726,37 +1797,37 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
   const drawEndMs = leadMs + drawMs, faceEndMs = faceEndIndex && strokes[faceEndIndex - 1] ? strokes[faceEndIndex - 1].tUp : 0;
   let finaleMs = drawEndMs, talk = null;
   if (glyphs) {
-    const msg = messageStrokes(glyphs, strokes, drawEndMs, random(777), signPace(totalMs), messageText, A); strokes.push(...msg);
+    const msg = messageStrokes(glyphs, strokes, drawEndMs, random(777), signPace(totalMs), messageText, A, signature, frame); strokes.push(...msg);
     if (msg.length) {
       finaleMs = msg[msg.length - 1].tUp;
       if (speak) talk = planTalk(A, messageText, msg[0].tDown, finaleMs); // the portrait says the line as it is written
     }
   }
-  if (signature) strokes.push(...signatureStrokes(strokes, finaleMs, random(4321), signPace(totalMs)));
+  if (signature) strokes.push(...signatureStrokes(signature, finaleMs, random(4321), signPace(totalMs), frame));
   const exitMs = Math.min(700, outroMs * .75);
 
-  return { strokes, totalMs, drawEndMs, exitMs, talk, entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, ai:!!ai,
-    intro:intro && { ...intro, photo:A.work, face:A.face }, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
+  return { strokes, totalMs, drawEndMs, exitMs, talk, entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, ai:!!ai, polaroid:frame,
+    intro:intro && { ...intro, photo:A.work, face:A.face, at:{ x:b.x, y:b.y } }, aiLayer:ai ? A.ai.layer : null, stats, audio:buildAudioEvents(strokes) };
 }
 
 // ───────────────────────── rendering ─────────────────────────
 let cursor = { stroke:0, point:0, time:-1 };
-function resetInk() { inkCtx.clearRect(0, 0, W, H); revealCtx.clearRect(0, 0, W, H); cursor = { stroke:0, point:0, time:-1 }; }
+function resetInk() { inkCtx.clearRect(0, 0, W, H); notesCtx.clearRect(0, 0, W, H); revealCtx.clearRect(0, 0, W, H); cursor = { stroke:0, point:0, time:-1 }; }
 function revealSegment(s, i) {
   revealCtx.lineWidth = REVEAL_RADIUS * 2 + 1;
   revealCtx.beginPath(); revealCtx.moveTo(s.x[i], s.y[i]); revealCtx.lineTo(s.x[i + 1], s.y[i + 1]); revealCtx.stroke();
 }
 let inkDarkness = Number(darkness.value) / 100; // "선 진하기": scales every stroke's graphite
-function drawSegment(s, i) {
+function drawSegment(s, i, g = inkCtx) {
   const p = (s.pr[i] + s.pr[i + 1]) / 2, a = s.alpha * p * inkDarkness;
   // Once a stroke is fully opaque, extra darkness presses harder: the line gets broader instead.
   const press = a > 1 ? Math.min(1.8, 1 + (a - 1) * .6) : 1;
-  inkCtx.globalAlpha = Math.min(1, a); inkCtx.lineWidth = s.width * (.45 + .55 * p) * press;
-  inkCtx.beginPath(); inkCtx.moveTo(s.x[i], s.y[i]); inkCtx.lineTo(s.x[i + 1], s.y[i + 1]); inkCtx.stroke();
+  g.globalAlpha = Math.min(1, a); g.lineWidth = s.width * (.45 + .55 * p) * press;
+  g.beginPath(); g.moveTo(s.x[i], s.y[i]); g.lineTo(s.x[i + 1], s.y[i + 1]); g.stroke();
   if (s.ghost) { // a second, fainter graphite edge makes the line look drawn rather than vector-perfect
     const dx = s.x[i + 1] - s.x[i], dy = s.y[i + 1] - s.y[i], l = Math.hypot(dx, dy) || 1, o = .55;
-    inkCtx.globalAlpha = Math.min(1, a * s.ghost); inkCtx.lineWidth = s.width * .55 * press;
-    inkCtx.beginPath(); inkCtx.moveTo(s.x[i] - dy / l * o, s.y[i] + dx / l * o); inkCtx.lineTo(s.x[i + 1] - dy / l * o, s.y[i + 1] + dx / l * o); inkCtx.stroke();
+    g.globalAlpha = Math.min(1, a * s.ghost); g.lineWidth = s.width * .55 * press;
+    g.beginPath(); g.moveTo(s.x[i] - dy / l * o, s.y[i] + dx / l * o); g.lineTo(s.x[i + 1] - dy / l * o, s.y[i + 1] + dx / l * o); g.stroke();
   }
 }
 function strokeProgress(s, t) {
@@ -1772,12 +1843,12 @@ function advanceInk(t) {
   while (cursor.stroke < list.length) {
     const s = list[cursor.stroke];
     if (t < s.tDown) break;
-    const signing = s.kind === 'sign' || s.kind === 'dot', revealing = s.ai && plan.aiLayer;
+    const signing = s.kind === 'sign' || s.kind === 'dot', revealing = s.ai && plan.aiLayer, target2d = plan.polaroid && signing ? notesCtx : inkCtx;
     if (signing && drew) clip();
     const done = t >= s.tUp, target = done ? s.n - 1 : Math.floor(strokeProgress(s, t));
     while (cursor.point < target) {
       if (revealing) revealSegment(s, cursor.point++);
-      else { drawSegment(s, cursor.point++); if (!signing) drew = true; }
+      else { drawSegment(s, cursor.point++, target2d); if (!signing) drew = true; }
     }
     if (!done) break;
     cursor.stroke++; cursor.point = 0;
@@ -1817,7 +1888,16 @@ function drawPencil(pen) {
 function renderFrame(t) {
   ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(sceneCanvas, 0, 0);
-  onSheet(() => { ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawSheet(t); });
+  if (plan?.polaroid) {
+    // Polaroid style: blank canvas board, the card taped on it, the sketch in its picture window, the notes on its margin.
+    ctx.save(); ctx.translate(BOARD.x, BOARD.y); ctx.scale(BOARD.s, BOARD.s); ctx.drawImage(paperCanvas, 0, 0); ctx.restore();
+    ctx.drawImage(polaroidBackdrop(), 0, 0);
+    onSheet(() => { clipWindow(); drawSheet(t); });
+    onSheet(() => {
+      const p = plan.polaroid; ctx.drawImage(notes, 0, 0);
+      ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 2 / p.s; ctx.strokeRect(p.x0, p.y0, p.side, p.side); // the picture's edge
+    });
+  } else onSheet(() => { ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawSheet(t); });
   drawTalk(t);
   drawPolaroid(t);
   const pen = plan ? pencilAt(t) : null, hand = pen && handToggle?.checked && handImage.naturalWidth > 0;
@@ -1842,7 +1922,7 @@ handImage.decode().then(() => {
   redrawStill();
 }).catch(() => {});
 function drawHand(pen) {
-  const tx = BOARD.x + pen.x * BOARD.s, ty = BOARD.y + pen.y * BOARD.s, lift = pen.lift, scale = HAND.screenPencil / HAND.pencilLength;
+  const { x:tx, y:ty } = sheetToView(pen.x, pen.y), lift = pen.lift, scale = HAND.screenPencil / HAND.pencilLength;
   // Lean: the arm lies flatter when the point is on the left, so the photo's cut-off elbow side always stays off the frame.
   const angle = -.32 + .42 * clamp((tx - BOARD.x) / BOARD.w);
   if (handShadow) {
@@ -1924,6 +2004,12 @@ function drawSheet(t) {
 function drawPolaroid(t) {
   // The reference photo as a polaroid taped to the canvas at a slight angle; it lifts away and fades before drawing starts.
   const intro = plan?.intro; if (!intro || t >= intro.hold + intro.fade) return;
+  if (plan.polaroid) {
+    // Polaroid style: the card stays put; the photo simply fades out of its picture window, leaving blank film to draw on.
+    const u = t < intro.hold ? 0 : ease((t - intro.hold) / intro.fade);
+    onSheet(() => { clipWindow(); ctx.globalAlpha = 1 - u; ctx.drawImage(intro.photo, intro.at.x, intro.at.y); ctx.fillStyle = 'rgba(255,240,215,.08)'; ctx.fillRect(plan.polaroid.x0, plan.polaroid.y0, plan.polaroid.side, plan.polaroid.side); });
+    return;
+  }
   intro.card ??= polaroidCard(intro.photo, intro.face); // built once, so it fades as one solid piece
   const { card } = intro, u = t < intro.hold ? 0 : ease((t - intro.hold) / intro.fade);
   const cx = VIEW_W / 2 + u * 40, cy = BOARD.y + BOARD.h * .47 - u * 90, angle = -.085 + u * .05, scale = 1 + u * .05;
@@ -1935,23 +2021,34 @@ function drawPolaroid(t) {
   ctx.restore();
 }
 function polaroidCard(photo, face) {
-  // Square crop centred a little below the eyes, like a portrait snapshot, in a white instant-film frame.
-  const side = Math.min(photo.width, photo.height, Math.max(face.rx, face.ry) * 3.4);
-  const sx = clamp(face.x - side / 2, 0, photo.width - side), sy = clamp(face.y - side * .46, 0, photo.height - side);
-  const img = Math.round(BOARD.w * .68), border = Math.round(img * .055), bottom = Math.round(img * .26), tape = 32;
-  const cardW = img + border * 2, cardH = img + border + bottom;
+  // Square crop centred a little below the eyes, like a portrait snapshot, in a white instant-film frame (blank without a photo).
+  const { img, border, tape, cardW, cardH } = POLAROID;
   const card = document.createElement('canvas'); card.width = cardW; card.height = cardH + tape;
   const g = card.getContext('2d'); g.translate(0, tape);
   const paper = g.createLinearGradient(0, 0, cardW, cardH); paper.addColorStop(0, '#fdfcf8'); paper.addColorStop(1, '#ece7dc');
   g.fillStyle = paper; g.fillRect(0, 0, cardW, cardH);
-  g.drawImage(photo, sx, sy, side, side, border, border, img, img);
-  g.fillStyle = 'rgba(255,240,215,.08)'; g.fillRect(border, border, img, img); // a touch of instant-film warmth
+  if (photo) {
+    const side = Math.min(photo.width, photo.height, Math.max(face.rx, face.ry) * 3.4);
+    const sx = clamp(face.x - side / 2, 0, photo.width - side), sy = clamp(face.y - side * .46, 0, photo.height - side);
+    g.drawImage(photo, sx, sy, side, side, border, border, img, img);
+    g.fillStyle = 'rgba(255,240,215,.08)'; g.fillRect(border, border, img, img); // a touch of instant-film warmth
+  }
   g.strokeStyle = 'rgba(0,0,0,.12)'; g.lineWidth = 2; g.strokeRect(border, border, img, img);
   // A strip of translucent tape holding it to the canvas.
   g.translate(cardW / 2, 0); g.rotate(.06);
   g.fillStyle = 'rgba(236,228,205,.78)'; g.fillRect(-cardW * .16, -tape + 4, cardW * .32, 58);
   g.strokeStyle = 'rgba(160,145,115,.25)'; g.lineWidth = 1.5; g.strokeRect(-cardW * .16, -tape + 4, cardW * .32, 58);
   return card;
+}
+let backdrop = null;
+function polaroidBackdrop() {
+  // The blank card in its resting pose with its soft shadow, rendered once over a transparent frame-sized layer.
+  if (backdrop) return backdrop;
+  const card = polaroidCard(null); backdrop = document.createElement('canvas'); backdrop.width = VIEW_W; backdrop.height = VIEW_H;
+  const g = backdrop.getContext('2d'); g.translate(POLAROID.center.x, POLAROID.center.y); g.rotate(POLAROID.angle);
+  g.shadowColor = 'rgba(20,12,6,.5)'; g.shadowBlur = 38; g.shadowOffsetX = 14; g.shadowOffsetY = 22;
+  g.drawImage(card, -card.width / 2, -card.height / 2);
+  return backdrop;
 }
 
 // ───────────────────────── pencil sound ─────────────────────────
@@ -2072,7 +2169,8 @@ function drawFaceGuide(box) {
 }
 function rebuild() {
   if (!analysis) return;
-  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, signatureToggle?.checked ?? true, introToggle?.checked ?? true, messageInput?.value ?? '', talkToggle?.checked ?? false);
+  const sign = (signatureToggle?.checked ?? true) ? signatureGlyphs(signatureInput?.value) : null; // null for a moment while a script font loads
+  plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, sign, introToggle?.checked ?? true, messageInput?.value ?? '', talkToggle?.checked ?? false, polaroidToggle?.checked ?? false);
   resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
   const faceAt = plan.faceEndMs ? ` 얼굴은 ${(plan.faceEndMs / 1000).toFixed(1)}초에 완성됩니다.` : '';
   const hands = analysis.marks?.hands?.length ?? 0, detailNote = analysis.marks?.mesh ? ` 이목구비${hands ? `와 손 ${hands}개` : ''}를 세밀하게 그립니다.` : '';
@@ -2080,8 +2178,20 @@ function rebuild() {
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (signatureInput) signatureInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy; if (polaroidToggle) polaroidToggle.disabled = busy;
   strength.disabled = busy || styleSelect.value === 'line'; // shadow amount only matters when shading is drawn
+  for (const range of SLIDERS) { const box = numberBox(range); if (box) box.disabled = range.disabled; }
+}
+// Every slider has a number box beside it: typing a value moves the slider (rounded and kept inside its range) and back.
+const SLIDERS = [seconds, darkness, strength, volume], numberBox = range => document.querySelector(`#${range.id}Num`);
+for (const range of SLIDERS) {
+  const box = numberBox(range); if (!box) continue;
+  range.addEventListener('input', () => { box.value = range.value; });
+  box.addEventListener('change', () => {
+    const typed = Math.round(Number(box.value)), value = Number.isFinite(typed) && box.value !== '' ? clamp(typed, Number(range.min), Number(range.max)) : Number(range.value);
+    box.value = value;
+    if (Number(range.value) !== value) { range.value = value; range.dispatchEvent(new Event('input')); }
+  });
 }
 // Busy overlay on the canvas while a photo is analysed: a spinner, the current step, and the elapsed seconds.
 const busyBox = document.querySelector('#busy'), busyText = document.querySelector('#busyText'), busyTime = document.querySelector('#busyTime');
@@ -2130,7 +2240,7 @@ photoInput.addEventListener('change', event => {
 let drag = null;
 const canvasPoint = event => { // screen → video frame → sheet coordinates
   const r = canvas.getBoundingClientRect(), vx = (event.clientX - r.left) * VIEW_W / r.width, vy = (event.clientY - r.top) * VIEW_H / r.height;
-  return { x:(vx - BOARD.x) / BOARD.s, y:(vy - BOARD.y) / BOARD.s };
+  return viewToSheet(vx, vy);
 };
 const dragBox = (a, z) => ({ x:(a.x + z.x) / 2, y:(a.y + z.y) / 2, rx:Math.abs(z.x - a.x) / 2, ry:Math.abs(z.y - a.y) / 2 });
 canvas.addEventListener('pointerdown', event => {
@@ -2153,8 +2263,8 @@ canvas.addEventListener('pointerup', event => {
   status.textContent = '지정한 얼굴 위치로 다시 분석하고 있습니다…';
   setTimeout(() => { analysis = analyzeFace(analysis, next); rebuild(); }, 20);
 });
-seconds.addEventListener('input', () => { document.querySelector('#secondsLabel').textContent = `${seconds.value}초`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
-strength.addEventListener('input', () => { document.querySelector('#strengthLabel').textContent = `${strength.value}%`; stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
+seconds.addEventListener('input', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
+strength.addEventListener('input', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 styleSelect.addEventListener('change', async () => {
   stopPlayback(); preview.textContent = '미리보기'; setBusy(false);
   if (styleSelect.value === 'ai' && analysis && !analysis.ai && !analysis.aiFailed) {
@@ -2167,21 +2277,23 @@ styleSelect.addEventListener('change', async () => {
 });
 signatureToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 introToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
+polaroidToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 talkToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 handToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; redrawStill(); });
 let messageTimer = 0; // re-plan shortly after typing stops, not on every keystroke
 messageInput?.addEventListener('input', () => { clearTimeout(messageTimer); messageTimer = setTimeout(() => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); }, 350); });
+signatureInput?.addEventListener('input', () => { clearTimeout(messageTimer); messageTimer = setTimeout(() => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); }, 350); });
 titleInput?.addEventListener('input', () => {
   const lines = titleInput.value.split('\n'); if (lines.length > 2) titleInput.value = lines.slice(0, 2).join('\n'); // two lines at most
   redrawStill();
 });
 document.fonts?.load(`100px ${TITLE_FONT}`, '가나다 ABC').then(redrawStill).catch(() => {}); // the title font arrives from the web
 darkness.addEventListener('input', () => {
-  document.querySelector('#darknessLabel').textContent = `${darkness.value}%`; inkDarkness = Number(darkness.value) / 100;
+  inkDarkness = Number(darkness.value) / 100;
   if (!plan) return; // no re-analysis needed: just redraw the finished sketch with the new pressure
   stopPlayback(); preview.textContent = '미리보기'; resetInk(); renderFrame(plan.totalMs); drawFaceGuide();
 });
-volume.addEventListener('input', () => { document.querySelector('#volumeLabel').textContent = `${volume.value}%`; sound.setVolume(Number(volume.value)); });
+volume.addEventListener('input', () => { sound.setVolume(Number(volume.value)); });
 // Start fetching the models early so the first photo is quick.
 loadFaceDetector().catch(() => {}); loadSegmenter().catch(() => {}); loadLandmarkers().catch(() => {}); loadObjectSegmenter().catch(() => {});
 if (styleSelect.value === 'ai') loadLineArt().catch(() => {});

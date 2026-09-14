@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>연필 초상화 영상 제작기</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Nanum+Pen+Script&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Allura&family=Black+Han+Sans&family=Nanum+Brush+Script&family=Nanum+Pen+Script&display=swap" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -19,6 +19,7 @@
       <input id="photo" type="file" accept="image/*" />
       <label>영상 제목 <small class="note">최대 2줄 · Enter로 줄바꿈</small><textarea id="title" rows="2" maxlength="60" placeholder="예) 임영웅 연필 초상화&#10;20초 만에 그려보기"></textarea></label>
       <label>손글씨 한 줄 <small class="note">그림 완성 후 빈 곳에 연필로 씁니다</small><input id="message" type="text" maxlength="24" placeholder="예) 오늘하루 행복하세요!" /></label>
+      <label>서명 <small class="note">왼쪽 위에 필기체로 · 끝에 . 을 넣으면 "탁" 점</small><input id="signatureText" type="text" maxlength="20" value="David Lee." placeholder="예) David Lee." /></label>
       <p id="status" role="status">사진을 선택하면 흑연 연필 초상화로 변환합니다.</p>
     </section>
     <section class="stage">
@@ -29,7 +30,7 @@
       <p class="hint">얼굴을 먼저 완성한 뒤 몸과 배경으로 이어지는 연필 크로키 영상입니다. 얼굴 위치가 틀리면 캔버스에서 얼굴을 클릭(휴대폰은 톡 누르기)하세요.</p>
     </section>
     <section class="controls settings" aria-label="영상 설정">
-      <label>영상 길이 <output id="secondsLabel">20초</output><input id="seconds" type="range" min="4" max="20" value="20" /></label>
+      <label>영상 길이 <span class="num"><input id="secondsNum" type="number" inputmode="numeric" min="4" max="20" step="1" value="20" aria-label="영상 길이(초)" />초</span><input id="seconds" type="range" min="4" max="20" value="20" /></label>
       <label>그림 스타일
         <select id="style">
           <option value="ai" selected>정밀 선화 (AI)</option>
@@ -37,14 +38,15 @@
           <option value="shade">선 + 그림자 살짝</option>
         </select>
       </label>
-      <label>선 진하기 <output id="darknessLabel">100%</output><input id="darkness" type="range" min="50" max="200" value="100" /></label>
-      <label>그림자 해칭 양 <output id="strengthLabel">40%</output><input id="strength" type="range" min="0" max="100" value="40" /></label>
+      <label>선 진하기 <span class="num"><input id="darknessNum" type="number" inputmode="numeric" min="50" max="200" step="1" value="100" aria-label="선 진하기(%)" />%</span><input id="darkness" type="range" min="50" max="200" value="100" /></label>
+      <label>그림자 해칭 양 <span class="num"><input id="strengthNum" type="number" inputmode="numeric" min="0" max="100" step="1" value="40" aria-label="그림자 해칭 양(%)" />%</span><input id="strength" type="range" min="0" max="100" value="40" /></label>
       <label class="check"><input id="intro" type="checkbox" checked /> 시작할 때 원본 사진 보여주기</label>
-      <label class="check"><input id="talk" type="checkbox" checked /> 마지막에 그림이 손글씨 문장을 말하기 (입 움직임)</label>
-      <label class="check"><input id="hand" type="checkbox" checked /> 연필 대신 실제 손으로 그리기 (실험)</label>
-      <label class="check"><input id="signature" type="checkbox" checked /> 마지막에 서명 넣기 (David Lee.)</label>
+      <label class="check"><input id="polaroidSketch" type="checkbox" /> 폴라로이드 사진처럼 스케치하기 (손글씨·서명은 아래 여백에)</label>
+      <label class="check"><input id="talk" type="checkbox" /> 마지막에 그림이 손글씨 문장을 말하기 (입 움직임)</label>
+      <label class="check"><input id="hand" type="checkbox" checked /> 연필 대신 실제 손으로 그리기</label>
+      <label class="check"><input id="signature" type="checkbox" checked /> 마지막에 서명 넣기</label>
       <label class="check"><input id="sound" type="checkbox" checked /> 연필 사각거리는 소리 넣기</label>
-      <label>연필 소리 크기 <output id="volumeLabel">20%</output><input id="volume" type="range" min="0" max="100" value="20" /></label>
+      <label>연필 소리 크기 <span class="num"><input id="volumeNum" type="number" inputmode="numeric" min="0" max="100" step="1" value="20" aria-label="연필 소리 크기(%)" />%</span><input id="volume" type="range" min="0" max="100" value="20" /></label>
       <label>저장 형식
         <select id="format">
           <option value="mp4" selected>MP4 (대부분의 플레이어·편집 프로그램)</option>
