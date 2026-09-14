@@ -1301,6 +1301,12 @@ function chaikin(pts) {
 function simplify(pts, tol) { // Ramer–Douglas–Peucker: construction lines are straighter than the final contour
   if (pts.length < 3) return pts;
   const a = pts[0], z = pts[pts.length - 1], len = Math.hypot(z.x - a.x, z.y - a.y) || 1;
+  if (Math.hypot(z.x - a.x, z.y - a.y) <= tol) {
+    // A closed loop (the ㅇ of 영, an iris ring) has no chord to measure from and would collapse to a dot: split it at its far side.
+    let far = 0, split = 0;
+    for (let i = 1; i < pts.length - 1; i++) { const d = Math.hypot(pts[i].x - a.x, pts[i].y - a.y); if (d > far) { far = d; split = i; } }
+    return far > tol ? simplify(pts.slice(0, split + 1), tol).slice(0, -1).concat(simplify(pts.slice(split), tol)) : [a, z];
+  }
   let worst = 0, index = 0;
   for (let i = 1; i < pts.length - 1; i++) { const d = Math.abs((z.x - a.x) * (a.y - pts[i].y) - (a.x - pts[i].x) * (z.y - a.y)) / len; if (d > worst) { worst = d; index = i; } }
   return worst > tol ? simplify(pts.slice(0, index + 1), tol).slice(0, -1).concat(simplify(pts.slice(index), tol)) : [a, z];
