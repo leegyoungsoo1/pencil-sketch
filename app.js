@@ -2473,6 +2473,7 @@ exportButton.addEventListener('click', async () => {
       status.textContent = '영상을 한 장씩 만들고 있습니다… 잠시만 기다려 주세요.';
       const blob = await buildVideo(format, encoders, share => {
         const percent = Math.floor(share * 100); exportButton.textContent = `영상 만드는 중 ${percent}%`;
+        exportButton.style.setProperty('--progress', `${percent}%`); // the save button fills up as frames are built
         status.textContent = `영상을 한 장씩 만들고 있습니다… ${percent}%`;
       });
       saveVideo(blob, format, wanted);
@@ -2483,7 +2484,7 @@ exportButton.addEventListener('click', async () => {
     console.error(error); status.textContent = `영상을 만들지 못했습니다. 다시 시도해 주세요. (${error?.message ?? error})`;
   } finally {
     if (session === token) session = null;
-    keepAwake(false); setBusy(false); updateExportLabel(); resetInk(); renderFrame(plan.totalMs);
+    keepAwake(false); setBusy(false); updateExportLabel(); exportButton.style.removeProperty('--progress'); resetInk(); renderFrame(plan.totalMs);
   }
 });
 renderFrame(0);
