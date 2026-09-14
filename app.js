@@ -1446,14 +1446,14 @@ function orderHatching(list, from) {
   }
   return out;
 }
-// The signature is whatever the user types. "David Lee." keeps the hand-shaped Allura skeleton above; any other name is
-// written in a script font (Allura for Latin letters, Nanum Brush Script for Hangul) and traced like the handwritten line.
-// A trailing full stop becomes the final "탁" tap.
-const SIGN_FONT = '"Allura", "Nanum Brush Script", cursive', DEFAULT_SIGNATURE = 'David Lee.';
+// The signature is whatever the user types (an empty field signs the default name). "David Lee." keeps the hand-shaped
+// Allura skeleton above; any other name is written in a script font (Allura for Latin letters, Nanum Brush Script for
+// Hangul) and traced like the handwritten line. A trailing full stop becomes the final "탁" tap.
+const SIGN_FONT = '"Allura", "Nanum Brush Script", cursive', DEFAULT_SIGNATURE = 'Yoonseul Lee.', SKELETON_SIGNATURE = 'David Lee.';
 const signGlyphCache = new Map();
 function signatureGlyphs(text) {
   const typed = (text ?? '').trim() || DEFAULT_SIGNATURE;
-  if (typed === DEFAULT_SIGNATURE) return { aspect:SIGNATURE.aspect, paths:SIGNATURE.paths.map(flat => { const pts = []; for (let k = 0; k < flat.length; k += 2) pts.push({ x:flat[k], y:flat[k + 1] }); return pts; }), dot:{ x:SIGNATURE.dot[0], y:SIGNATURE.dot[1] } };
+  if (typed === SKELETON_SIGNATURE) return { aspect:SIGNATURE.aspect, paths:SIGNATURE.paths.map(flat => { const pts = []; for (let k = 0; k < flat.length; k += 2) pts.push({ x:flat[k], y:flat[k + 1] }); return pts; }), dot:{ x:SIGNATURE.dot[0], y:SIGNATURE.dot[1] } };
   const name = typed.replace(/\.+$/, '').trim(), glyphs = name ? traceGlyphs(name, SIGN_FONT, signGlyphCache) : null;
   if (!glyphs) return null;
   return { aspect:glyphs.aspect, paths:glyphs.strokes, dot:name.length < typed.length ? { x:glyphs.aspect + .14, y:.82 } : null };
