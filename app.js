@@ -2305,32 +2305,57 @@ document.fonts?.load(`100px ${TITLE_FONT}`, '가나다 ABC').then(redrawStill).c
 // A title and a handwritten line for the chosen singer, from phrases.js: the singer's own phrases (drawn twice as often) plus
 // the shared ones with the name filled in. Choosing a photo fills them automatically, but only into fields that are empty or
 // still hold an earlier suggestion — never over words the user typed. "다른 추천" always draws both again.
+// Phrases that went into a saved video are never suggested again (remembered on this device), so no two uploads repeat.
 const singerSelect = document.querySelector('#singer'), suggestButton = document.querySelector('#suggest'), autoSuggest = document.querySelector('#autoSuggest');
+const phraseCount = document.querySelector('#phraseCount'), resetPhrases = document.querySelector('#resetPhrases');
 const suggested = { title:false, message:false }; // true while a field holds a suggestion rather than the user's own words
 const fieldInput = field => field === 'title' ? titleInput : messageInput;
-function pickPhrase(field, current) {
-  if (typeof FAN_PHRASES === 'undefined') return null;
+const USED_KEY = 'pencil.usedPhrases';
+const usedPhrases = (() => { try { return new Set(JSON.parse(localStorage.getItem(USED_KEY) || '[]')); } catch { return new Set(); } })();
+const storeUsed = () => { try { localStorage.setItem(USED_KEY, JSON.stringify([...usedPhrases])); } catch {} };
+function phrasePool(field) { // the singer's own phrases twice, the shared ones once — minus everything already uploaded
+  if (typeof FAN_PHRASES === 'undefined') return [];
   const kind = field === 'title' ? 'titles' : 'lines', singer = singerSelect.value, own = singer === '공통' ? [] : FAN_PHRASES[singer]?.[kind] ?? [];
   const shared = FAN_PHRASES.공통[kind].filter(p => singer !== '공통' || !p.includes('{name}')).map(p => p.replaceAll('{name}', singer));
-  const pool = [...own, ...own, ...shared].filter(p => p !== current);
+  return [...own, ...own, ...shared].filter(p => !usedPhrases.has(p));
+}
+function pickPhrase(field, current) {
+  const pool = phrasePool(field).filter(p => p !== current);
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
 }
+function updatePhraseCount() {
+  if (!phraseCount) return;
+  const left = field => new Set(phrasePool(field)).size;
+  phraseCount.textContent = `남은 추천: 제목 ${left('title')}개 · 손글씨 ${left('message')}개${usedPhrases.size ? ` (영상에 쓴 문구 ${usedPhrases.size}개 제외)` : ''}`;
+  if (resetPhrases) resetPhrases.hidden = !usedPhrases.size;
+}
+function markPhrasesUsed() { // called once a video has actually been saved
+  for (const field of ['title', 'message']) { const text = fieldInput(field).value.trim(); if (text) usedPhrases.add(text); }
+  storeUsed(); updatePhraseCount();
+}
 function fillSuggestion(fields) {
-  let changed = false;
+  let changed = false, exhausted = false;
   for (const field of fields) {
-    const input = fieldInput(field), next = pickPhrase(field, input.value); if (!next) continue;
+    const input = fieldInput(field), next = pickPhrase(field, input.value);
+    if (!next) { exhausted = true; continue; }
     input.value = next; suggested[field] = changed = true;
   }
+  if (exhausted) status.textContent = '이 가수의 추천 문구를 모두 사용했습니다. 문구를 직접 입력하거나 사용 기록을 초기화해 주세요.';
   if (!changed) return;
   stopPlayback(); preview.textContent = '미리보기';
   if (analysis) rebuild(); else redrawStill();
 }
+resetPhrases?.addEventListener('click', () => {
+  if (!confirm(`영상에 쓴 문구 ${usedPhrases.size}개를 다시 추천할까요?\n같은 문구가 채널에 중복으로 올라갈 수 있어요.`)) return;
+  usedPhrases.clear(); storeUsed(); updatePhraseCount();
+});
 const autoFields = () => ['title', 'message'].filter(field => suggested[field] || !fieldInput(field).value.trim());
 titleInput?.addEventListener('input', () => { suggested.title = false; });
 messageInput?.addEventListener('input', () => { suggested.message = false; });
 suggestButton?.addEventListener('click', () => fillSuggestion(['title', 'message']));
 singerSelect?.addEventListener('change', () => {
   try { localStorage.setItem('pencil.singer', singerSelect.value); } catch {}
+  updatePhraseCount();
   fillSuggestion(['title', 'message'].filter(field => suggested[field])); // a new singer replaces only the suggestions
 });
 autoSuggest?.addEventListener('change', () => { try { localStorage.setItem('pencil.autoSuggest', autoSuggest.checked ? '1' : '0'); } catch {} });
@@ -2339,6 +2364,7 @@ try { // remember the singer and the auto-fill choice on this device
   if (singer && [...singerSelect.options].some(o => o.value === singer)) singerSelect.value = singer;
   if (auto !== null) autoSuggest.checked = auto === '1';
 } catch {}
+updatePhraseCount();
 darkness.addEventListener('input', () => {
   inkDarkness = Number(darkness.value) / 100;
   if (!plan) return; // no re-analysis needed: just redraw the finished sketch with the new pressure
@@ -2375,6 +2401,7 @@ function saveVideo(blob, ext, wanted) {
   const url = URL.createObjectURL(blob), link = document.createElement('a');
   const d = new Date(), pad = v => String(v).padStart(2, '0'), stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   link.href = url; link.download = `pencil-sketch-${stamp}.${ext}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+  markPhrasesUsed(); // this video's title and line are now uploaded material: never suggest them again
   const where = /Android/i.test(navigator.userAgent) ? ' 휴대폰의 "다운로드" 폴더(내 파일 → 다운로드)에 저장됩니다. 편집 앱에서 불러오세요.' : '';
   status.textContent = (ext === wanted ? `${ext.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 저장을 지원하지 않아 ${ext.toUpperCase()}로 저장했습니다.`) + where;
 }
