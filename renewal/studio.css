@@ -1,0 +1,13 @@
+:root{--paper:#f5f4ef;--card:#fff;--line:#dcded7;--line-strong:#a6afa7;--ink:#26352e;--ink-muted:#646c66;--pencil:#d9e7cd;--pencil-hover:#c8ddba;--pencil-edge:#8ca681;--on-pencil:#26352e;--focus-ring:#becfac;--radius-lg:12px;--shadow:0 4px 24px #243c2810}
+body{background:#f5f4ef}
+.studio-nav{display:flex;align-items:center;gap:24px;padding:20px max(24px,calc((100vw - 1200px)/2));border-bottom:1px solid #dadcd5;background:#fcfcf8}
+.studio-nav a{color:#26352e;text-decoration:none;font-size:15px;font-weight:700}
+.studio-nav .studio-brand{margin-right:auto;font-size:23px;letter-spacing:-1px}
+.studio-brand span{display:block;font-size:9px;letter-spacing:2px;margin-top:2px}
+.app-header{padding:36px 0 24px}.app-header .logo{border-radius:50%}.app-header h1{letter-spacing:-1px}
+.program-mode{background:#e8ede3;border-color:#d5ddcf}
+.card{box-shadow:none;border-color:#dcded7}.step-title{letter-spacing:-.7px}.step-no{background:#e0e9d7;color:#344b39}
+.upload{background:#f7f9f3;border-color:#a0b395}.upload:hover{background:#edf4e5}
+.action-bar{background:#fcfcf8ed;border-top:1px solid #d8ded3;backdrop-filter:blur(12px)}
+.btn-primary{background:#314c3c;color:#fff;border-color:#314c3c}.btn-primary:hover{background:#41644d;color:#fff}
+@media(max-width:600px){.studio-nav{gap:15px;padding:16px}.studio-nav .studio-brand{font-size:19px}.studio-nav a{font-size:13px}.app-header{padding-top:24px}}

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "oak-easel",
+    "name": "햇살 원목 이젤",
+    "file": "assets/backgrounds/oak-easel.webp"
+  },
+  {
+    "id": "walnut",
+    "name": "월넛 작업대",
+    "file": "assets/backgrounds/walnut.webp"
+  },
+  {
+    "id": "hanok",
+    "name": "한옥의 오후",
+    "file": "assets/backgrounds/hanok.webp"
+  },
+  {
+    "id": "linen",
+    "name": "리넨 드로잉 보드",
+    "file": "assets/backgrounds/linen.webp"
+  },
+  {
+    "id": "white-studio",
+    "name": "화이트 아틀리에",
+    "file": "assets/backgrounds/white-studio.webp"
+  },
+  {
+    "id": "vintage",
+    "name": "빈티지 화실",
+    "file": "assets/backgrounds/vintage.webp"
+  },
+  {
+    "id": "night",
+    "name": "밤의 작업실",
+    "file": "assets/backgrounds/night.webp"
+  },
+  {
+    "id": "garden",
+    "name": "정원 속 화판",
+    "file": "assets/backgrounds/garden.webp"
+  },
+  {
+    "id": "coastal",
+    "name": "바닷가 아틀리에",
+    "file": "assets/backgrounds/coastal.webp"
+  },
+  {
+    "id": "cherry",
+    "name": "벚나무 책상",
+    "file": "assets/backgrounds/cherry.webp"
+  }
+]
