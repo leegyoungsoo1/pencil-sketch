@@ -1487,15 +1487,17 @@ function signatureBox(sign, frame) {
   const height = Math.min(W * .28 / SIGNATURE.aspect, W * .4 / sign.aspect), margin = 24; // "David Lee." keeps its original size
   return { x:PAD + margin, y:PAD + margin + 6, height, width:height * span };
 }
-function placeSignature(sign, frame) {
-  const box = signatureBox(sign, frame), to = p => ({ x:box.x + p.x * box.height, y:box.y + p.y * box.height });
+function placeSignature(sign, frame, letter=false) {
+  const box = signatureBox(sign, frame);
+  if(letter && !frame) box.y=H-55;
+  const to = p => ({ x:box.x + p.x * box.height, y:box.y + p.y * box.height });
   return { paths:sign.paths.map(path => path.map(to)), dot:sign.dot ? to(sign.dot) : null, height:box.height };
 }
 const SIGN_MS = 3000; // travel + name + pause + tap + a moment before the pencil leaves, at full pace
 const signPace = totalMs => clamp(totalMs / 12000, .55, 1); // short videos sign a little faster
-function signatureStrokes(sign, startMs, rand, pace, frame) {
+function signatureStrokes(sign, startMs, rand, pace, frame, letter=false) {
   // The name is written in one quick, continuous gesture, then a short pause, a lift — and the full stop: "탁".
-  const { paths, dot, height } = placeSignature(sign, frame), out = [];
+  const { paths, dot, height } = placeSignature(sign, frame, letter), out = [];
   for (const raw of paths) {
     const s = finalizeStroke({ raw, kind:'sign', fine:true, face:0, strength:1 }, rand, 0, 0);
     if (s) out.push(Object.assign(s, { width:1.5, alpha:.95, ghost:.25 }));
@@ -1884,7 +1886,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
       if (speak) talk = planTalk(A, messageText, msg[0].tDown, finaleMs); // the portrait says the line as it is written
     }
   }
-  if (signature) strokes.push(...signatureStrokes(signature, finaleMs, random(4321), pace, frame));
+  if (signature) strokes.push(...signatureStrokes(signature, finaleMs, random(4321), pace, frame, !!glyphs?.letter));
   const exitMs = Math.min(700, outroMs * .75);
 
   return { letter:!!glyphs?.letter, strokes, totalMs, drawEndMs, exitMs, talk, entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, faithful, croquis, ai:!!ai, polaroid:frame,
@@ -2159,13 +2161,13 @@ function buildAudioEvents(strokes) {
       const speed=Math.hypot(q.x-p.x,q.y-p.y)/Math.max(.001,(after-before)/1000);
       const intensity=speed/(speed+1800);
       const edge=Math.min(1,u/.18,(1-u)/.20);
-      samples.push({time:t,level:edge*(pressure[s.kind]||.7)*(.22+.85*intensity),freq:1300+2300*intensity,speed});
+      samples.push({time:t,level:edge*(pressure[s.kind]||.7)*(.18+.45*intensity),freq:900+900*intensity,speed});
     }
     return {start:s.tDown,end:s.tUp,samples};
   });
 }
 
-const volumeGain = percent => (percent / 100) * .5;
+const volumeGain = percent => (percent / 100) * .28;
 function createPencilVoice(ac, destination) {
   // Pink noise modulated by tiny random scratches (paper tooth), band-limited to the papery mid range.
   const rate = ac.sampleRate, buffer = ac.createBuffer(1, rate * 3, rate), data = buffer.getChannelData(0), rnd = random(99);
@@ -2174,18 +2176,21 @@ function createPencilVoice(ac, destination) {
   for (let i = 0; i < data.length; i++) {
     const white = rnd() * 2 - 1;
     b0 = .99765 * b0 + white * .099046; b1 = .963 * b1 + white * .2965164; b2 = .57 * b2 + white * 1.0526913;
-    if (rnd() < 400 / rate) grain = .5 + rnd() * .5;
+    if (rnd() < 90 / rate) grain = .08 + rnd() * .08;
     grain *= decay;
     data[i] = (b0 + b1 + b2 + white * .1848) * .25 * (.45 + grain);
     energy += data[i] * data[i];
   }
-  const norm = .25 / Math.sqrt(energy / data.length);
+  const norm = .18 / Math.sqrt(energy / data.length);
   for (let i = 0; i < data.length; i++) data[i] = clamp(data[i] * norm, -1, 1);
+  // Fade the loop seam over 8 ms so repeated noise cannot click.
+  const seam=Math.round(rate*.008);
+  for(let i=0;i<seam;i++){const fade=.5-.5*Math.cos(Math.PI*i/seam);data[i]*=fade;data[data.length-1-i]*=fade;}
   const src = ac.createBufferSource(); src.buffer = buffer; src.loop = true;
   const filter = (type, f, q, gain = 0) => { const node = ac.createBiquadFilter(); node.type = type; node.frequency.value = f; node.Q.value = q; node.gain.value = gain; return node; };
-  const color = filter('peaking', 2200, 1.1, 6), env = ac.createGain(), out = ac.createGain();
+  const color = filter('peaking', 1300, .5, 1), env = ac.createGain(), out = ac.createGain();
   env.gain.value = 0; out.gain.value = volumeGain(Number(volume?.value ?? 20));
-  src.connect(filter('highpass', 700, .7)).connect(filter('lowpass', 5500, .6)).connect(color).connect(env).connect(out).connect(destination);
+  src.connect(filter('highpass', 350, .7)).connect(filter('lowpass', 2600, .7)).connect(color).connect(env).connect(out).connect(destination);
   src.start();
   return { env, color, out };
 }
@@ -2230,24 +2235,20 @@ function configureLayout() {
   const letter=wrapLetter(messageInput.value.trim()).length>1;
   const w=landscape?1920:1080, h=landscape?1080:1920;
   let board;
-  if(landscape) board={w:660,x:letter?160:630,y:160};
-  else if(letter) board={w:510,x:285,y:190};
+  if(landscape) board={w:660,x:630,y:160};
   else board={w:980,x:50,y:Math.round((h-980*H/W)*.42)};
   board.h=board.w*H/W; board.s=board.w/W;
   const changed=VIEW_W!==w || VIEW_H!==h || BOARD.w!==board.w || BOARD.x!==board.x || BOARD.y!==board.y;
   VIEW_W=w; VIEW_H=h;
   if(canvas.width!==w || canvas.height!==h) {canvas.width=w;canvas.height=h;}
   Object.assign(BOARD,board);
-  letterBoard=letter?(landscape?{x:1080,y:160,w:660,h:880,s:660/W}:{x:195,y:925,w:690,h:920,s:690/W}):null;
+  letterBoard=null;
   if(changed) {Object.assign(POLAROID,makePolaroid());backdrop=null;sceneCanvas=makeScene();}
   canvas.style.aspectRatio=`${w} / ${h}`;
   document.querySelector('.canvas-wrap').classList.toggle('landscape',landscape);
 }
 function drawLetter() {
-  if(!plan?.letter || !letterBoard) return;
-  const b=letterBoard;ctx.save();ctx.shadowColor='#0006';ctx.shadowBlur=18;ctx.shadowOffsetY=7;
-  ctx.drawImage(paperCanvas,b.x,b.y,b.w,b.h);ctx.shadowColor='transparent';
-  ctx.drawImage(letterInk,b.x,b.y,b.w,b.h);ctx.restore();
+  if(plan?.letter) onSheet(()=>ctx.drawImage(letterInk,0,0));
 }
 function pointOnPage(s,x,y) {
   if(s?.message && plan?.letter && letterBoard) return {x:letterBoard.x+x*letterBoard.s,y:letterBoard.y+y*letterBoard.s};
@@ -2298,7 +2299,7 @@ function updateProjectSummary() {
   const count=photos.length || (analysis?1:0), duration=count*Number(seconds.value);
   document.querySelector('#projectSummary').textContent=count?`${count}장 × ${seconds.value}초 = 총 ${Math.floor(duration/60)}분 ${duration%60}초 · 선택한 사진의 완성 장면을 미리 봅니다.`:'';
   const lines=wrapLetter(messageInput.value.trim()).length, recommended=Math.min(600,Math.max(30,Math.ceil([...messageInput.value].length*.45+20)));
-  document.querySelector('#messageHelp').textContent=`최대 4,000자 · 현재 ${lines}줄 (긴 줄은 자동 줄바꿈). ${lines>1?'초상화와 나란히 별도 편지지에 씁니다. ':''}${lines>16?'16줄을 넘으면 글씨가 작아집니다. ':''}${lines>1?`여유 있는 손글씨를 위해 한 장당 ${recommended}초 이상을 권합니다. `:''}모든 사진에 공통으로 적용됩니다.`;
+  document.querySelector('#messageHelp').textContent=`최대 4,000자 · 현재 ${lines}줄 (긴 줄은 자동 줄바꿈). ${lines>1?'그림 위에 직접 씁니다. ':''}${lines>16?'16줄을 넘으면 글씨가 작아집니다. ':''}${lines>1?`여유 있는 손글씨를 위해 한 장당 ${recommended}초 이상을 권합니다. `:''}모든 사진에 공통으로 적용됩니다.`;
 }
 function renderQueue() {
   const el=document.querySelector('#photoQueue');el.replaceChildren();
