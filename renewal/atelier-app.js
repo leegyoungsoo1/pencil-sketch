@@ -1943,7 +1943,7 @@ function strokeProgress(s, t) {
   return lo+clamp((progress-times[lo])/Math.max(1e-12,times[hi]-times[lo]));
 }
 function advanceInk(t) {
-  if (t < cursor.time) resetInk();
+  if (t < cursor.time || (t >= plan.totalMs && cursor.time !== t)) resetInk();
   cursor.time = t;
   const list = plan.strokes; let drew = false;
   // Graphite never survives outside the figure's silhouette — except the signature, which lives on the bare paper.
@@ -2296,6 +2296,7 @@ function rememberPhoto() {
   projectSegments=[];
 }
 function updateProjectSummary() {
+  fileName.textContent=photos.length?`${photos.length}장 선택됨 · 사진 추가하기`:"JPG · PNG · WEBP";
   const count=photos.length || (analysis?1:0), duration=count*Number(seconds.value);
   document.querySelector('#projectSummary').textContent=count?`${count}장 × ${seconds.value}초 = 총 ${Math.floor(duration/60)}분 ${duration%60}초 · 선택한 사진의 완성 장면을 미리 봅니다.`:'';
   const lines=wrapLetter(messageInput.value.trim()).length, recommended=Math.min(600,Math.max(30,Math.ceil([...messageInput.value].length*.45+20)));
@@ -2347,7 +2348,7 @@ async function addPhotos(files) {
       }catch(error){URL.revokeObjectURL(url);failed++;console.error(error);}
     }
     if(first>=0){restoreSelectedPhoto(first);await ensureDrawingFonts();rebuild();}
-    renderQueue();updateProjectSummary();fileName.textContent=`${photos.length}장 선택됨 · 사진 추가하기`;
+    renderQueue();updateProjectSummary();
     if(failed)status.textContent=`${failed}장은 열지 못했습니다. 정상적으로 열린 ${files.length-failed}장을 추가했습니다.`;
   }finally{photoInput.value='';hideBusy();setBusy(false);}
 }
@@ -2441,6 +2442,8 @@ function rebuild() {
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
+  document.querySelector(".upload").setAttribute("aria-disabled",String(busy));
+  document.querySelector("#uploadLabel").textContent=busy?"처리 중입니다…":"사진 선택하기";
   preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (signatureInput) signatureInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy; if (handMotionToggle) handMotionToggle.disabled = busy; if (polaroidToggle) polaroidToggle.disabled = busy; if (suggestButton) suggestButton.disabled = busy; if (singerSelect) singerSelect.disabled = busy;
   for (const id of ['framing', 'presentation', 'seek', 'compare', 'saveStill', 'orientation', 'titleFont', 'signaturePreset']) document.getElementById(id).disabled = busy;
   document.querySelectorAll('#photoQueue button').forEach(b=>b.disabled=busy||b.dataset.boundary==='true');
@@ -2464,6 +2467,8 @@ const busyBox = document.querySelector('#busy'), busyText = document.querySelect
 let busyTimer = 0, busyStart = 0;
 function showBusy(message) {
   if (!busyBox) return;
+  document.querySelector("#uploadLabel").textContent="사진 분석·그리기 중…";
+  for(const id of ["uploadProgress","processingNotice"]){const el=document.getElementById(id);el.hidden=false;el.textContent=message;}
   busyText.textContent = message; preview.disabled = true; exportButton.disabled = true;
   if (busyBox.hidden) {
     busyBox.hidden = false; busyStart = performance.now(); clearInterval(busyTimer);
@@ -2471,7 +2476,7 @@ function showBusy(message) {
     tick(); busyTimer = setInterval(tick, 500);
   }
 }
-function hideBusy() { if (!busyBox) return; busyBox.hidden = true; clearInterval(busyTimer); preview.disabled = false; exportButton.disabled = false; }
+function hideBusy() { for(const id of ["uploadProgress","processingNotice"])document.getElementById(id).hidden=true; document.querySelector("#uploadLabel").textContent="사진 선택하기"; if (!busyBox) return; busyBox.hidden = true; clearInterval(busyTimer); preview.disabled = false; exportButton.disabled = false; }
 const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 30))); // let the overlay appear before heavy work
 let loadToken = 0;
 const uploadBox = document.querySelector('.upload');
@@ -2506,14 +2511,12 @@ canvas.addEventListener('pointerup', event => {
 seconds.addEventListener('input', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 strength.addEventListener('input', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 styleSelect.addEventListener('change', async () => {
-  stopPlayback(); preview.textContent = '미리보기'; setBusy(false);
-  if (['ai', 'croquis'].includes(styleSelect.value) && analysis && !analysis.ai && !analysis.aiFailed) {
-    const target = analysis; setBusy(true);
-    status.textContent = 'AI가 사진을 선화로 옮기고 있습니다…'; showBusy('AI가 사진을 선화로 옮기는 중입니다'); await nextPaint();
-    await ensureLineArt(target); setBusy(false); hideBusy();
-    if (analysis !== target) return;
-  }
-  rebuild();
+  stopPlayback(); preview.textContent='미리보기';
+  if(!analysis)return;
+  setBusy(true);showBusy('그림 스타일을 적용해 미리보기를 다시 그리고 있습니다…');
+  try {await nextPaint();if(['ai','croquis'].includes(styleSelect.value))await ensureLineArt(analysis);rebuild();}
+  catch(error){console.error(error);status.textContent='그림을 다시 그리지 못했습니다. 다시 시도해 주세요.';}
+  finally{hideBusy();setBusy(false);}
 });
 signatureToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
 introToggle?.addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; rebuild(); });
@@ -2815,7 +2818,7 @@ strength.disabled = styleSelect.value === "faithful";
 document.querySelector('#framing').addEventListener('change', async () => {
   if (!source || !busyBox.hidden || exportButton.disabled) return;
   stopPlayback(); setBusy(true); showBusy('새 구도로 사진을 분석하고 있습니다');
-  try { analysis = await analyzePhoto(source); if (['ai', 'croquis'].includes(styleSelect.value)) await ensureLineArt(analysis); rebuild(); }
+  try { await nextPaint(); analysis = await analyzePhoto(source); if (['ai', 'croquis'].includes(styleSelect.value)) await ensureLineArt(analysis); rebuild(); }
   catch (error) { console.error(error); status.textContent = '구도 변경에 실패했습니다. 사진을 다시 선택해 주세요.'; }
   finally { setBusy(false); hideBusy(); }
 });

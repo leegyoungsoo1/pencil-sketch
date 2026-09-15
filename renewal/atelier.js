@@ -1,6 +1,3 @@
-document.querySelector('#programMode').addEventListener('change',event=>{
- if(['atelier.html','upgraded.html','classic.html'].includes(event.target.value))location.assign(event.target.value);
-});
 const atelierStage=document.querySelector('#stage');
 document.querySelector('#expandCanvas').addEventListener('click',event=>{
  const expanded=atelierStage.classList.toggle('is-expanded');
