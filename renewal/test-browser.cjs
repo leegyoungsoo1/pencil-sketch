@@ -2,5 +2,5 @@ const { chromium } = require(require.resolve('playwright', {paths:[__dirname, (p
 const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const root=__dirname; fs.mkdirSync(path.join(root,'.test-output'),{recursive:true});
 const server=http.createServer((req,res)=>{let p=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]==='/'?'/index.html':req.url.split('?')[0]));if(!p.startsWith(root+path.sep)){res.writeHead(403).end();return;}fs.readFile(p,(e,b)=>{if(e){res.writeHead(404).end();return;}res.setHeader('Content-Type',({'.js':'application/javascript','.html':'text/html','.css':'text/css','.webp':'image/webp'})[path.extname(p)]||'application/octet-stream');res.end(b);});});
-const test=process.argv.includes('--project')?'./verify-project.cjs':process.argv.includes('--modes')?'./verify-modes.cjs':'./verify-site.cjs';
+const test=process.argv.includes('--atelier')?'./verify-atelier.cjs':process.argv.includes('--project')?'./verify-project.cjs':process.argv.includes('--modes')?'./verify-modes.cjs':'./verify-site.cjs';
 Promise.resolve(require(test)({chromium,server,root})).catch(error=>{console.error(error);server.close();process.exitCode=1;});

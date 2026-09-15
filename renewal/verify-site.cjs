@@ -14,9 +14,12 @@ module.exports=async({chromium,server,root})=>{
   }
   await page.locator('.faq summary').first().click();assert(await page.locator('.faq details').first().evaluate(e=>e.open));
   await page.locator('.faq summary').nth(1).click();assert.equal(await page.locator('.faq details[open]').count(),1);
-  await page.locator('.site-header .button').click();await page.waitForURL('**/upgraded.html');
-  assert.equal(await page.inputValue('#style'),'croquis');assert.equal(await page.inputValue('#programMode'),'upgraded.html');
-  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(out,'studio-desktop.png'),fullPage:true});
+  await page.locator('.site-header .button').click();await page.waitForURL('**/atelier.html');
+  assert.equal(await page.inputValue('#style'),'croquis');assert.equal(await page.inputValue('#programMode'),'atelier.html');
+  await page.setViewportSize({width:1440,height:1000});
+  assert(await page.evaluate(()=>Math.abs(document.querySelector('#stage').getBoundingClientRect().width-document.querySelector('.layout').getBoundingClientRect().width)<2));
+  await page.click('#expandCanvas');assert.equal(await page.getAttribute('#expandCanvas','aria-pressed'),'true');await page.click('#expandCanvas');
+  await page.screenshot({path:path.join(out,'studio-desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:path.join(out,'studio-mobile.png'),fullPage:true});
   await page.selectOption('#programMode','classic.html');await page.waitForURL('**/classic.html');assert.equal(await page.inputValue('#style'),'ai');

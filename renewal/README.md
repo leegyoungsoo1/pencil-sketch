@@ -14,3 +14,9 @@
 검증: `node renewal/test-browser.cjs --site`, `node renewal/test-browser.cjs --project` (저장소 루트에서 실행). 첫 번째 검증은 이미지, 메뉴, 반응형 레이아웃을 확인하고, 두 번째는 첫 번째 테스트 사진으로 PNG와 연결 영상·60초 영상을 저장합니다.
 
 기존 프로그램과 사용자 설정이 섞이지 않도록 문구 추천 이력·가수 선택·자동 추천 설정의 저장 공간도 구분했습니다.
+
+## 새 작업실 추가
+
+`atelier.html`은 큰 미리보기를 한 행 전체에 배치한 새 작업실입니다. `atelier-app.js`, `atelier.css`, `atelier.js`로 독립되어 있으며 기존 `upgraded.html`, `classic.html` 및 실행 코드는 변경하지 않았습니다. 세로 미리보기 기본 폭은 최대 720px이며 화면 폭 확대와 전체 화면을 지원합니다. 가로 영상은 전체 폭으로 표시합니다. 메인 사이트의 작업실 버튼은 새 작업실로 연결합니다.
+
+검증: `node renewal/test-browser.cjs --atelier` (첫 번째 사진으로 PNG, 연결 영상, 60초 저장).
