@@ -2,7 +2,8 @@ const { chromium } = require(require.resolve('playwright', {paths:[__dirname, (p
 const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const root=__dirname; fs.mkdirSync(path.join(root,'.test-output'),{recursive:true});
 const server=http.createServer((req,res)=>{let p=path.resolve(root,'.'+decodeURIComponent(req.url.split('?')[0]==='/'?'/index.html':req.url.split('?')[0]));if(!p.startsWith(root+path.sep)){res.writeHead(403).end();return;}fs.readFile(p,(e,b)=>{if(e){res.writeHead(404).end();return;}res.setHeader('Content-Type',({'.js':'application/javascript','.html':'text/html','.css':'text/css','.webp':'image/webp'})[path.extname(p)]||'application/octet-stream');res.end(b);});});
-if (process.argv.includes('--modes')) require('./verify-modes.cjs')({chromium,server,root});
+if (process.argv.includes('--project')) require('./verify-project.cjs')({chromium,server,root});
+else if (process.argv.includes('--modes')) require('./verify-modes.cjs')({chromium,server,root});
 else if (process.argv.includes('--inspect-videos')) require('./verify-videos.cjs')({chromium,server,root});
 else if (process.argv.includes('--hand-controls')) require('./verify-hand-controls.cjs')({chromium,server,root});
 else if (process.argv.includes('--portraits')) require('./validate-photos.cjs')({chromium,server,root});

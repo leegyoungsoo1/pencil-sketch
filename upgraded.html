@@ -43,7 +43,10 @@
         <span class="upload-icon" aria-hidden="true"></span>
         <span class="upload-text"><strong>사진 선택하기</strong><small id="fileName">JPG · PNG · WEBP</small></span>
       </label>
-      <input id="photo" class="visually-hidden" type="file" accept="image/*" />
+      <input id="photo" class="visually-hidden" type="file" accept="image/*" multiple />
+      <p class="help">여러 사진을 한 번에 선택하거나 추가하세요. 아래 순서대로 하나의 영상으로 이어집니다.</p>
+      <div id="photoQueue" class="photo-queue" aria-label="사진 순서"></div>
+      <p id="projectSummary" class="help" aria-live="polite"></p>
       <p id="status" class="status" role="status">사진의 윤곽을 연필 선으로 옮겨 한 획씩 크로키를 그립니다. 선명한 원본 사진을 선택해 주세요.</p>
     </section>
 
@@ -55,7 +58,8 @@
         <div class="suggest-row">
           <label class="visually-hidden" for="singer">가수</label>
           <select id="singer">
-            <option value="임영웅">임영웅</option>
+            <option value="none">문구 없이 · 빈칸</option>
+            <option value="임영웅" selected>임영웅</option>
             <option value="이찬원">이찬원</option>
             <option value="영탁">영탁</option>
             <option value="공통">가수 이름 없이</option>
@@ -73,15 +77,18 @@
         <label for="title">영상 제목</label>
         <textarea id="title" rows="2" maxlength="60" placeholder="예) 임영웅 연필 초상화&#10;20초 만에 그려보기" aria-describedby="titleHelp"></textarea>
         <p id="titleHelp" class="help">최대 2줄 · Enter로 줄바꿈</p>
+        <label for="titleFont">제목 글꼴</label>
+        <select id="titleFont"><option value="Black Han Sans">힘 있는 제목</option><option value="Nanum Gothic">단정한 고딕</option><option value="Nanum Pen Script">다정한 손글씨</option><option value="Nanum Brush Script">붓으로 쓴 편지</option><option value="serif">차분한 명조</option></select>
       </div>
       <div class="field">
-        <label for="message">손글씨 한 줄</label>
-        <input id="message" type="text" maxlength="24" placeholder="예) 오늘하루 행복하세요!" aria-describedby="messageHelp" />
-        <p id="messageHelp" class="help">그림을 다 그린 뒤 빈 곳에 연필로 씁니다</p>
+        <label for="message">손글씨 편지</label>
+        <textarea id="message" rows="12" maxlength="4000" placeholder="전하고 싶은 마음을 편지로 써 주세요.&#10;Enter로 줄을 바꿀 수 있습니다." aria-describedby="messageHelp"></textarea>
+        <p id="messageHelp" class="help">최대 4,000자 · 10줄 이상 입력 가능. 긴 편지는 별도 편지지에 씁니다. 내용이 길면 사진 한 장당 시간을 늘려 주세요. 문구는 모든 사진에 공통으로 적용됩니다.</p>
       </div>
       <div class="field">
         <label for="signatureText">서명</label>
-        <input id="signatureText" type="text" maxlength="20" value="Yoonseul Lee." placeholder="예) Yoonseul Lee." aria-describedby="signatureHelp" />
+        <select id="signaturePreset" aria-label="서명 선택"><option>David Lee.</option><option>Yoonseul Lee.</option><option value="custom">직접 입력</option></select>
+        <input id="signatureText" type="text" maxlength="40" value="David Lee." placeholder="서명을 직접 수정할 수 있습니다" aria-describedby="signatureHelp" />
         <p id="signatureHelp" class="help">왼쪽 위에 필기체로 씁니다 · 끝에 마침표(.)를 넣으면 "탁" 점을 찍어요</p>
       </div>
     </section>
@@ -96,7 +103,7 @@
       <div class="preview-tools">
         <label for="seek">장면 확인 <output id="seekTime">완성 장면</output></label>
         <input id="seek" type="range" min="0" max="1000" value="1000" aria-label="영상 장면 탐색" />
-        <div class="review-actions"><button id="compare" type="button" class="btn btn-secondary" aria-pressed="false">원본 비교</button><button id="saveStill" type="button" class="btn btn-secondary">완성 그림 저장</button></div>
+        <div class="review-actions"><button id="compare" type="button" class="btn btn-secondary" aria-pressed="false">원본 비교</button><button id="saveStill" type="button" class="btn btn-secondary">완성 사진 다운로드 (PNG)</button></div>
       </div>
       <p class="help center">얼굴 위치가 틀리면 캔버스에서 얼굴을 눌러 주세요.</p>
     </section>
@@ -108,10 +115,11 @@
       <fieldset>
         <legend>영상</legend>
         <div class="field slider">
-          <label for="seconds">영상 길이</label>
-          <span class="num"><input id="secondsNum" type="number" inputmode="numeric" min="4" max="60" step="1" value="30" aria-label="영상 길이(초)" />초</span>
-          <input id="seconds" type="range" min="4" max="60" value="30" />
+          <label for="seconds">사진 한 장당 길이</label>
+          <span class="num"><input id="secondsNum" type="number" inputmode="numeric" min="4" max="600" step="1" value="30" aria-label="사진 한 장당 영상 길이(초)" />초</span>
+          <input id="seconds" type="range" min="4" max="600" value="30" />
         </div>
+        <div class="field"><label for="orientation">영상 방향</label><select id="orientation"><option value="portrait">세로 · 9:16 (1080 × 1920)</option><option value="landscape">가로 · 16:9 롱폼 (1920 × 1080)</option></select></div>
         <div class="field">
           <label for="format">저장 형식</label>
           <select id="format">
@@ -148,7 +156,7 @@
           <span class="num"><input id="strengthNum" type="number" inputmode="numeric" min="0" max="100" step="1" value="40" aria-label="그림자 해칭 양(%)" />%</span>
           <input id="strength" type="range" min="0" max="100" value="40" />
         </div>
-        <label class="check"><input id="polaroidSketch" type="checkbox" /><span>폴라로이드 사진처럼 스케치하기<small>손글씨·서명은 아래 흰 여백에 씁니다</small></span></label>
+        <label class="check"><input id="polaroidSketch" type="checkbox" /><span>폴라로이드 사진처럼 스케치하기<small>한 줄 문구·서명은 흰 여백에, 여러 줄 편지는 별도 편지지에 씁니다</small></span></label>
         <label class="check"><input id="hand" type="checkbox" checked /><span>내 손과 팔로 그리기</span></label>
         <label class="check"><input id="handMotion" type="checkbox" checked /><span>그리는 위치에 따라 팔 각도 조절</span></label>
       </fieldset>
@@ -158,7 +166,8 @@
         <div class="field">
           <label for="presentation">영상 배경</label>
           <select id="presentation"><option value="gallery">밤빛 갤러리 · 초상화에 집중</option><option value="studio">따뜻한 나무 작업실</option></select>
-          <p class="help">갤러리는 마지막에 손글씨 문구를 큰 글자로 한 번 더 보여 줍니다.</p>
+          <p class="help" id="backgroundHelp">초상화와 편지를 돋보이게 하는 배경을 선택하세요.</p>
+          <div id="backgroundChoices" class="background-choices" aria-label="배경 미리보기"></div>
         </div>
         <label class="check"><input id="intro" type="checkbox" checked /><span>시작할 때 원본 사진 보여주기</span></label>
         <label class="check"><input id="signature" type="checkbox" checked /><span>마지막에 서명 넣기</span></label>
