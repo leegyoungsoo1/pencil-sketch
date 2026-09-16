@@ -2291,7 +2291,10 @@ async function loadBackgrounds() {
     if(backgroundImages.size)document.querySelector('#backgroundHelp').textContent='초상화와 편지를 돋보이게 하는 배경을 선택하세요.';
   } catch { /* The two built-in backgrounds remain available offline. */ }
 }
+function savePhotoWords(){if(photos[selectedPhoto])photos[selectedPhoto].words={title:titleInput.value,message:messageInput.value,signature:signatureInput.value};}
+function applyPhotoWords(item){if(!item?.words)return;titleInput.value=item.words.title;messageInput.value=item.words.message;signatureInput.value=item.words.signature;document.querySelector("#signaturePreset").value=["David Lee.","Yoonseul Lee."].includes(signatureInput.value)?signatureInput.value:"custom";}
 function rememberPhoto() {
+  savePhotoWords();
   if(photos[selectedPhoto]) Object.assign(photos[selectedPhoto],{source,analysis,plan});
   projectSegments=[];
 }
@@ -2300,27 +2303,28 @@ function updateProjectSummary() {
   const count=photos.length || (analysis?1:0), duration=count*Number(seconds.value);
   document.querySelector('#projectSummary').textContent=count?`${count}장 × ${seconds.value}초 = 총 ${Math.floor(duration/60)}분 ${duration%60}초 · 선택한 사진의 완성 장면을 미리 봅니다.`:'';
   const lines=wrapLetter(messageInput.value.trim()).length, recommended=Math.min(600,Math.max(30,Math.ceil([...messageInput.value].length*.45+20)));
-  document.querySelector('#messageHelp').textContent=`최대 4,000자 · 현재 ${lines}줄 (긴 줄은 자동 줄바꿈). ${lines>1?'그림 위에 직접 씁니다. ':''}${lines>16?'16줄을 넘으면 글씨가 작아집니다. ':''}${lines>1?`여유 있는 손글씨를 위해 한 장당 ${recommended}초 이상을 권합니다. `:''}모든 사진에 공통으로 적용됩니다.`;
+  document.querySelector('#messageHelp').textContent=`최대 4,000자 · 현재 ${lines}줄 (긴 줄은 자동 줄바꿈). ${lines>1?'그림 위에 직접 씁니다. ':''}${lines>16?'16줄을 넘으면 글씨가 작아집니다. ':''}${lines>1?`여유 있는 손글씨를 위해 한 장당 ${recommended}초 이상을 권합니다. `:''}선택한 사진에만 적용됩니다.`;
 }
 function renderQueue() {
+  const picker=document.querySelector("#wordsPhoto");picker.replaceChildren();photos.forEach((item,i)=>picker.add(new Option(`${i+1}. ${item.name}`,String(i))));picker.value=String(selectedPhoto);
   const el=document.querySelector('#photoQueue');el.replaceChildren();
   photos.forEach((item,i)=>{
     const card=document.createElement('div');card.className='photo-item';
     const select=document.createElement('button');select.type='button';select.setAttribute('aria-pressed',String(i===selectedPhoto));
     const thumb=document.createElement('img');thumb.src=item.url;thumb.alt='';
-    const name=document.createElement('span');name.textContent=`${i+1}. ${item.name}`;
-    select.append(thumb,name);select.addEventListener('click',()=>{stopPlayback();restoreSelectedPhoto(i);rebuild();renderQueue();});card.append(select);
+    const name=document.createElement('span');name.textContent=`${i+1}. ${item.name} · ${item.analysis?"분석 완료":"만들기 대기"}`;
+    select.append(thumb,name);select.addEventListener('click',()=>{clearTimeout(messageTimer);stopPlayback();savePhotoWords();restoreSelectedPhoto(i);rebuild();renderFrame(plan?.totalMs||0);renderQueue();updateProjectSummary();});card.append(select);
     const controls=document.createElement('div');controls.className='photo-order';
     for(const [label,delta] of [['앞으로',-1],['뒤로',1],['삭제',0]]) {
       const button=document.createElement('button');button.type='button';button.textContent=label;
       button.disabled=delta!==0&&(i+delta<0||i+delta>=photos.length);
       button.dataset.boundary=String(button.disabled);
       button.addEventListener('click',()=>{
-        stopPlayback();const selected=photos[selectedPhoto];
+        clearTimeout(messageTimer);stopPlayback();savePhotoWords();const selected=photos[selectedPhoto];
         if(delta) [photos[i],photos[i+delta]]=[photos[i+delta],photos[i]];
         else {URL.revokeObjectURL(item.url);photos.splice(i,1);}
         selectedPhoto=Math.max(0,photos.indexOf(selected));projectSegments=[];
-        if(photos.length){restoreSelectedPhoto();rebuild();}else{selectedPhoto=-1;source=analysis=plan=null;renderFrame(0);}
+        if(photos.length){restoreSelectedPhoto();rebuild();renderFrame(plan?.totalMs||0);}else{selectedPhoto=-1;source=analysis=plan=null;renderFrame(0);}
         renderQueue();updateProjectSummary();
       });controls.append(button);
     }
@@ -2329,34 +2333,34 @@ function renderQueue() {
 }
 function restoreSelectedPhoto(index=selectedPhoto) {
   if(!photos[index])return;
-  selectedPhoto=index;({source,analysis,plan}=photos[index]);resetInk();
+  selectedPhoto=index;({source,analysis,plan}=photos[index]);applyPhotoWords(photos[index]);resetInk();
 }
 async function addPhotos(files) {
-  if(!files.length)return;
-  stopPlayback();setBusy(true);showBusy('사진을 준비하고 있습니다');
-  let first=-1,failed=0;
-  try {
-    if(autoSuggest.checked)fillSuggestion(autoFields());
-    for(let i=0;i<files.length;i++) {
-      const file=files[i],url=URL.createObjectURL(file),image=new Image();image.src=url;
-      showBusy(`${i+1}/${files.length} · ${file.name}\n얼굴과 연필 선을 분석하고 있습니다`);await nextPaint();
-      try {
-        await image.decode();const result=await analyzePhoto(image);
-        if(['ai','croquis'].includes(styleSelect.value))await ensureLineArt(result);
-        if(first<0)first=photos.length;
-        photos.push({name:file.name,url,source:image,analysis:result,plan:null});
-      }catch(error){URL.revokeObjectURL(url);failed++;console.error(error);}
-    }
-    if(first>=0){restoreSelectedPhoto(first);await ensureDrawingFonts();rebuild();}
-    renderQueue();updateProjectSummary();
-    if(failed)status.textContent=`${failed}장은 열지 못했습니다. 정상적으로 열린 ${files.length-failed}장을 추가했습니다.`;
-  }finally{photoInput.value='';hideBusy();setBusy(false);}
+ if(!files.length)return;stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);
+ let first=-1,failed=0;
+ try{for(const file of files){const url=URL.createObjectURL(file),image=new Image();image.src=url;
+ try{await image.decode();if(first<0)first=photos.length;photos.push({name:file.name,url,source:image,analysis:null,plan:null,words:{title:autoSuggest.checked?(pickPhrase('title','')||''):'',message:autoSuggest.checked?(pickPhrase('message','')||''):'',signature:DEFAULT_SIGNATURE}});}catch{URL.revokeObjectURL(url);failed++;}}
+ if(first>=0)restoreSelectedPhoto(first);renderFrame(0);renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장은 열 수 없습니다. 나머지 사진을 정리한 뒤 만들기를 눌러 주세요.`:'사진을 목록에 담았습니다. 필요 없는 사진을 지운 뒤 만들기를 눌러 주세요.';
+ }finally{photoInput.value='';setBusy(false);}
 }
+function projectReady(){if(photos.length&&photos.every(p=>p.analysis))return true;status.textContent='사진을 정리한 뒤 만들기 버튼을 눌러 주세요.';document.querySelector('#createArtwork').scrollIntoView({block:'center',behavior:'smooth'});return false;}
+document.querySelector('#createArtwork').addEventListener('click',async()=>{
+ if(!photos.length){status.textContent='사진을 먼저 추가해 주세요.';return;}
+ stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);showBusy('선택한 사진을 분석하고 있습니다…');let failed=0;
+ try{for(let i=0;i<photos.length;i++){const item=photos[i];showBusy(`${i+1}/${photos.length} · ${item.name}\n사진을 분석하고 그림을 만들고 있습니다`);await nextPaint();
+ try{if(!item.analysis)item.analysis=await analyzePhoto(item.source);if(['ai','croquis'].includes(styleSelect.value))await ensureLineArt(item.analysis);applyPhotoWords(item);await ensureDrawingFonts();}catch(e){item.analysis=null;failed++;console.error(e);}}
+ restoreSelectedPhoto();if(!failed){rebuild();prepareProject();renderFrame(plan.totalMs);}renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장을 만들지 못했습니다. 해당 사진을 삭제하거나 다시 만들기를 눌러 주세요.`:'완성했습니다. 사진별 문구를 수정하거나 영상과 사진으로 저장하세요.';
+ }finally{hideBusy();setBusy(false);}
+});
+document.querySelector('#wordsPhoto').addEventListener('change',event=>{clearTimeout(messageTimer);stopPlayback();savePhotoWords();restoreSelectedPhoto(Number(event.target.value));rebuild();renderFrame(plan?.totalMs||0);renderQueue();updateProjectSummary();});
+for(const input of [titleInput,messageInput,signatureInput])input.addEventListener('input',savePhotoWords);
 function prepareProject() {
   configureLayout();
   if(!photos.length){projectSegments=[];return;}
-  const sign=signatureToggle.checked?signatureGlyphs(signatureInput.value):null;
+  savePhotoWords();
   projectSegments=photos.map((item,i)=>{
+    applyPhotoWords(item);
+    const sign=signatureToggle.checked?signatureGlyphs(signatureInput.value):null;
     item.plan=buildPlan(item.analysis,Number(seconds.value),Number(strength.value),styleSelect.value,sign,introToggle.checked,messageInput.value,talkToggle.checked,polaroidToggle.checked);
     return {item,start:i*Number(seconds.value)*1000};
   });
@@ -2364,14 +2368,14 @@ function prepareProject() {
 }
 async function ensureProjectLineArt() {
   if(!['ai','croquis'].includes(styleSelect.value))return;
-  for(const item of photos) if(!item.analysis.ai && !item.analysis.aiFailed) await ensureLineArt(item.analysis);
+  for(const item of photos) if(item.analysis && !item.analysis.ai && !item.analysis.aiFailed) await ensureLineArt(item.analysis);
 }
 function projectDuration(){return projectSegments.length?projectSegments.length*Number(seconds.value)*1000:plan.totalMs;}
 function projectAudio(){return projectSegments.length?projectSegments.flatMap(({item,start})=>item.plan.audio.map(e=>({...e,start:e.start+start,end:e.end+start,samples:e.samples.map(s=>({...s,time:s.time+start}))}))):plan.audio;}
 function renderProject(t) {
   if(projectSegments.length){
     const segment=projectSegments[Math.min(projectSegments.length-1,Math.max(0,Math.floor(t/(Number(seconds.value)*1000))))];
-    if(plan!==segment.item.plan){({source,analysis,plan}=segment.item);resetInk();}
+    if(plan!==segment.item.plan){({source,analysis,plan}=segment.item);applyPhotoWords(segment.item);resetInk();}
     renderFrame(clamp(t-segment.start,0,plan.totalMs));
   }else renderFrame(t);
 }
@@ -2430,7 +2434,7 @@ function drawFaceGuide(box) {
   });
 }
 function rebuild() {
-  if (!analysis) return;
+  if (!analysis) {savePhotoWords();updateProjectSummary();return;}
   configureLayout();
   const sign = (signatureToggle?.checked ?? true) ? signatureGlyphs(signatureInput?.value) : null; // null for a moment while a script font loads
   plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, sign, introToggle?.checked ?? true, messageInput?.value ?? '', talkToggle?.checked ?? false, polaroidToggle?.checked ?? false);
@@ -2442,6 +2446,7 @@ function rebuild() {
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
+  for(const id of ["createArtwork","resetProject","wordsPhoto"])document.getElementById(id).disabled=busy;
   document.querySelector(".upload").setAttribute("aria-disabled",String(busy));
   document.querySelector("#uploadLabel").textContent=busy?"처리 중입니다…":"사진 선택하기";
   preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (signatureInput) signatureInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy; if (handMotionToggle) handMotionToggle.disabled = busy; if (polaroidToggle) polaroidToggle.disabled = busy; if (suggestButton) suggestButton.disabled = busy; if (singerSelect) singerSelect.disabled = busy;
@@ -2612,7 +2617,7 @@ function scrollToCanvas() { // bring the whole canvas into view, with its top at
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector('.canvas-wrap')?.scrollIntoView({ behavior:'smooth', block:'start' })));
 }
 preview.addEventListener('click', async () => {
-  if (!plan) return;
+  if (!projectReady() || !plan) return;
   scrollToCanvas();
   if (session) { stopPlayback(); preview.textContent = '미리보기'; renderFrame(plan.totalMs); return; }
   preview.textContent = '정지'; status.textContent = '연필로 한 획씩 스케치하고 있습니다…';
@@ -2744,7 +2749,7 @@ async function recordRealtime(wanted, other) {
   saveVideo(new Blob(parts, { type:`video/${actual}` }), actual, wanted);
 }
 exportButton.addEventListener('click', async () => {
-  if (!plan) return;
+  if (!projectReady() || !plan) return;
   scrollToCanvas();
   stopPlayback(); clearTimeout(messageTimer); setBusy(true); preview.textContent = '미리보기';
   const withAudio = soundToggle.checked, wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
@@ -2800,25 +2805,22 @@ compareButton.addEventListener('click', () => {
   seekTime.textContent = show ? '원본 사진' : '완성 장면';
   seekControl.value = 1000;
 });
-document.querySelector('#saveStill').addEventListener('click', async () => {
-  if (!reviewReady()) return;
-  stopPlayback(); clearTimeout(messageTimer); await ensureTitleFont(); await ensureDrawingFonts(); rebuild(); renderFrame(plan.totalMs);
-  canvas.toBlob(blob => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob), a = document.createElement('a');
-    a.href = url; a.download = 'portrait-' + Date.now() + '.png'; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  }, 'image/png');
+const stillUrls=[];
+function clearStillDownloads(){stillUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));document.querySelector('#stillDownloads').replaceChildren();}
+document.querySelector('#saveStill').addEventListener('click',async()=>{
+ if(!projectReady()||!reviewReady())return;stopPlayback();clearTimeout(messageTimer);savePhotoWords();const selected=selectedPhoto;setBusy(true);clearStillDownloads();showBusy('완성 사진을 각각 저장하고 있습니다…');
+ try{for(let i=0;i<photos.length;i++){restoreSelectedPhoto(i);await ensureTitleFont();await ensureDrawingFonts();rebuild();renderFrame(plan.totalMs);const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));if(!blob)throw Error('PNG 생성 실패');const url=URL.createObjectURL(blob);stillUrls.push(url);const a=document.createElement('a');a.href=url;a.download=`${String(i+1).padStart(2,'0')}-${photos[i].name.replace(/\.[^.]+$/,'')}.png`;a.textContent=`${i+1}. ${photos[i].name} · PNG 다운로드`;document.querySelector('#stillDownloads').append(a);a.click();await nextPaint();}
+ status.textContent=`${photos.length}장의 PNG를 각각 만들었습니다. 다운로드가 차단된 파일은 미리보기 아래의 개별 링크를 눌러 주세요.`;
+ }catch(e){status.textContent=`사진 저장 실패: ${e.message}`;}finally{restoreSelectedPhoto(selected);renderFrame(plan.totalMs);hideBusy();setBusy(false);}
+});
+document.querySelector('#resetProject').addEventListener('click',()=>{
+ stopPlayback();clearTimeout(messageTimer);clearStillDownloads();photos.forEach(p=>URL.revokeObjectURL(p.url));photos.length=0;selectedPhoto=-1;projectSegments=[];source=analysis=plan=null;
+ for(const el of document.querySelectorAll('input,textarea,select')){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=el.defaultChecked;else if(el.tagName==='SELECT'){const option=[...el.options].find(o=>o.defaultSelected)||el.options[0];if(option)el.value=option.value;}else el.value=el.defaultValue;}
+ titleInput.value='';messageInput.value='';signatureInput.value=DEFAULT_SIGNATURE;autoSuggest.checked=false;singerSelect.value='none';TITLE_FONT='"Black Han Sans", "Malgun Gothic", sans-serif';inkDarkness=Number(darkness.value)/100;sound.setVolume(Number(volume.value));document.querySelectorAll("#backgroundChoices button").forEach(b=>b.setAttribute("aria-pressed","false"));resetInk();configureLayout();renderFrame(0);renderQueue();updateProjectSummary();preview.textContent='미리보기';seekControl.value=1000;seekTime.textContent='완성 장면';compareButton.setAttribute('aria-pressed','false');hideBusy();setBusy(false);updateExportLabel();status.textContent='새 작업을 시작합니다. 사진을 추가한 뒤 만들기를 눌러 주세요.';document.querySelector('#stage').classList.remove('is-expanded');document.querySelector('#stage').style.removeProperty('--preview-width');document.querySelector('#expandCanvas').setAttribute('aria-pressed','false');document.querySelector('#expandCanvas').textContent='화면 폭으로 확대';window.scrollTo({top:0,behavior:'smooth'});
 });
 
 document.querySelector('#presentation').addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; document.querySelectorAll('#backgroundChoices button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.background===document.querySelector('#presentation').value))); redrawStill(); });
 
 strength.disabled = styleSelect.value === "faithful";
 
-document.querySelector('#framing').addEventListener('change', async () => {
-  if (!source || !busyBox.hidden || exportButton.disabled) return;
-  stopPlayback(); setBusy(true); showBusy('새 구도로 사진을 분석하고 있습니다');
-  try { await nextPaint(); analysis = await analyzePhoto(source); if (['ai', 'croquis'].includes(styleSelect.value)) await ensureLineArt(analysis); rebuild(); }
-  catch (error) { console.error(error); status.textContent = '구도 변경에 실패했습니다. 사진을 다시 선택해 주세요.'; }
-  finally { setBusy(false); hideBusy(); }
-});
+document.querySelector('#framing').addEventListener('change',()=>{stopPlayback();savePhotoWords();photos.forEach(item=>{item.analysis=null;item.plan=null;});analysis=plan=null;projectSegments=[];resetInk();renderFrame(0);renderQueue();status.textContent='구도가 변경되었습니다. 만들기를 눌러 새 구도로 분석해 주세요.';});

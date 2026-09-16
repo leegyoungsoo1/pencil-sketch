@@ -35,15 +35,16 @@
       </label>
       <p id="uploadProgress" class="upload-progress" role="status" hidden></p>
       <input id="photo" class="visually-hidden" type="file" accept="image/*" multiple />
-      <p class="help">여러 사진을 한 번에 선택하거나 추가하세요. 아래 순서대로 하나의 영상으로 이어집니다.</p>
+      <p class="help">여러 사진을 한 번에 선택하거나 추가하세요. 필요 없는 사진을 삭제한 다음 만들기를 누르면 분석을 시작합니다.</p>
+      <div class="draft-actions"><button id="createArtwork" type="button" class="btn btn-primary">만들기 · 선택한 사진 분석</button><button id="resetProject" type="button" class="btn btn-secondary">새 작업 · 초기화</button></div>
       <div id="photoQueue" class="photo-queue" aria-label="사진 순서"></div>
       <p id="projectSummary" class="help" aria-live="polite"></p>
-      <p id="status" class="status" role="status">사진의 윤곽을 연필 선으로 옮겨 한 획씩 크로키를 그립니다. 선명한 원본 사진을 선택해 주세요.</p>
+      <p id="status" class="status" role="status">사진을 추가하고 목록을 정리한 뒤 만들기를 눌러 주세요. 분석은 만들기를 눌렀을 때 시작합니다.</p>
     </section>
 
     <!-- 3. Preview -->
     <section id="stage" class="card step stage" aria-labelledby="stepPreview">
-      <div class="atelier-stage-heading"><div><p class="atelier-kicker">YOUR CANVAS</p><h2 id="stepPreview" class="step-title">작품을 가까이, 더 선명하게.</h2></div><div class="atelier-view-tools"><button id="expandCanvas" type="button" aria-pressed="false">화면 폭으로 확대</button><button id="fullscreenCanvas" type="button">전체 화면 ↗</button></div></div><div class="atelier-canvas-mat">
+      <div class="atelier-stage-heading"><div><p class="atelier-kicker">YOUR CANVAS</p><h2 id="stepPreview" class="step-title">작품을 가까이, 더 선명하게.</h2></div><div class="atelier-view-tools"><button id="shrinkCanvas" type="button">축소 −</button><button id="expandCanvas" type="button" aria-pressed="false">화면 폭으로 확대</button><button id="fullscreenCanvas" type="button">전체 화면 ↗</button></div></div><div class="atelier-canvas-mat">
       <div class="canvas-wrap">
         <canvas id="canvas" width="1080" height="1920" aria-label="연필 드로잉 미리보기"></canvas>
         <div id="busy" class="busy" hidden><span class="spinner" aria-hidden="true"></span><strong id="busyText">사진을 분석하고 있습니다</strong><small id="busyTime">0초</small></div>
@@ -52,14 +53,15 @@
       <div class="preview-tools">
         <label for="seek">장면 확인 <output id="seekTime">완성 장면</output></label>
         <input id="seek" type="range" min="0" max="1000" value="1000" aria-label="영상 장면 탐색" />
-        <div class="review-actions"><button id="compare" type="button" class="btn btn-secondary" aria-pressed="false">원본 비교</button><button id="saveStill" type="button" class="btn btn-secondary">완성 사진 다운로드 (PNG)</button></div>
+        <div class="review-actions"><button id="compare" type="button" class="btn btn-secondary" aria-pressed="false">원본 비교</button><button id="saveStill" type="button" class="btn btn-secondary">완성 사진 각각 저장 (PNG)</button></div>
       </div>
-      <p class="help center">얼굴 위치가 틀리면 캔버스에서 얼굴을 눌러 주세요.</p>
+      <div id="stillDownloads" class="still-downloads" aria-live="polite"></div><p class="help center">얼굴 위치가 틀리면 캔버스에서 얼굴을 눌러 주세요.</p>
     </section>
 
     <!-- 2. Words -->
     <section class="card step step-words" aria-labelledby="stepWords">
       <h2 id="stepWords" class="step-title"><span class="step-no" aria-hidden="true">2</span>마음을 담는 문구</h2>
+      <div class="field"><label for="wordsPhoto">문구를 넣을 사진</label><select id="wordsPhoto"><option value="">사진을 먼저 추가해 주세요</option></select><p class="help">선택한 사진의 제목·편지·서명만 수정합니다. 빈칸으로 두면 문구를 넣지 않습니다.</p></div>
       <div class="suggest" role="group" aria-labelledby="suggestLabel">
         <p id="suggestLabel" class="group-label">팬심 문구 추천</p>
         <div class="suggest-row">
@@ -90,7 +92,7 @@
       <div class="field">
         <label for="message">손글씨 편지</label>
         <textarea id="message" rows="12" maxlength="4000" placeholder="전하고 싶은 마음을 편지로 써 주세요.&#10;Enter로 줄을 바꿀 수 있습니다." aria-describedby="messageHelp"></textarea>
-        <p id="messageHelp" class="help">최대 4,000자 · 10줄 이상 입력 가능. 편지는 그림 위에 직접 씁니다. 내용이 길면 사진 한 장당 시간을 늘려 주세요. 문구는 모든 사진에 공통으로 적용됩니다.</p>
+        <p id="messageHelp" class="help">최대 4,000자 · 10줄 이상 입력 가능. 편지는 그림 위에 직접 씁니다. 내용이 길면 사진 한 장당 시간을 늘려 주세요. 선택한 사진에만 적용됩니다.</p>
       </div>
       <div class="field">
         <label for="signatureText">서명</label>
