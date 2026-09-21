@@ -1,6 +1,6 @@
 {
-  "name": "팬심 한 자루",
-  "short_name": "팬심 한 자루",
+  "name": "추억 한 자루",
+  "short_name": "추억 한 자루",
   "description": "사진을 넣으면 연필이 한 획씩 초상화를 그려 나가는 영상을 만듭니다.",
   "lang": "ko",
   "start_url": "./",

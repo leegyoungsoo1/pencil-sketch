@@ -80,7 +80,8 @@ function random(seed) { // mulberry32: the same photo always produces the same d
   return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
 function fitRect(w, h) {
-  const maxW = W - PAD * 2, maxH = H - PAD * 2, scale = Math.min(maxW / w, maxH / h);
+  const margin=document.querySelector('#framing')?.value==='original'?12:PAD;
+  const maxW = W - margin * 2, maxH = H - margin * 2, scale = Math.min(maxW / w, maxH / h);
   const fw = Math.round(w * scale), fh = Math.round(h * scale);
   return { x:Math.round((W - fw) / 2), y:Math.round((H - fh) / 2), w:fw, h:fh };
 }
@@ -260,20 +261,20 @@ const POLAROID = makePolaroid();
 // shown, scaled and tilted, in the card's picture area (plan.polaroid holds that window).
 function applySheet(g) {
   const p = plan?.polaroid;
-  if (!p) { g.translate(BOARD.x, BOARD.y); g.scale(BOARD.s, BOARD.s); return; }
+  if (!p) { g.translate(BOARD.x, BOARD.y); g.scale(BOARD.s, BOARD.s); g.translate(-(BOARD.pageX||0),-(BOARD.pageY||0)); return; }
   g.translate(POLAROID.window.x, POLAROID.window.y); g.rotate(POLAROID.angle); g.scale(p.s, p.s); g.translate(-p.cx, -p.cy);
 }
 function sheetToView(x, y) {
-  const p = plan?.polaroid; if (!p) return { x:BOARD.x + x * BOARD.s, y:BOARD.y + y * BOARD.s };
+  const p = plan?.polaroid; if (!p) return { x:BOARD.x + (x-(BOARD.pageX||0)) * BOARD.s, y:BOARD.y + (y-(BOARD.pageY||0)) * BOARD.s };
   const dx = (x - p.cx) * p.s, dy = (y - p.cy) * p.s, c = Math.cos(POLAROID.angle), s = Math.sin(POLAROID.angle);
   return { x:POLAROID.window.x + dx * c - dy * s, y:POLAROID.window.y + dx * s + dy * c };
 }
 function viewToSheet(x, y) {
-  const p = plan?.polaroid; if (!p) return { x:(x - BOARD.x) / BOARD.s, y:(y - BOARD.y) / BOARD.s };
+  const p = plan?.polaroid; if (!p) return { x:(x - BOARD.x) / BOARD.s+(BOARD.pageX||0), y:(y - BOARD.y) / BOARD.s+(BOARD.pageY||0) };
   const dx = x - POLAROID.window.x, dy = y - POLAROID.window.y, c = Math.cos(POLAROID.angle), s = Math.sin(POLAROID.angle);
   return { x:p.cx + (dx * c + dy * s) / p.s, y:p.cy + (-dx * s + dy * c) / p.s };
 }
-const onSheet = fn => { ctx.save(); applySheet(ctx); fn(); ctx.restore(); };
+const onSheet = fn => { ctx.save(); try { applySheet(ctx); fn(); } finally { ctx.restore(); } };
 const clipWindow = () => { const p = plan?.polaroid; if (p) { ctx.beginPath(); ctx.rect(p.x0, p.y0, p.side, p.side); ctx.clip(); } };
 let GRAPHITE_MEAN = 0;
 const graphite = (() => {
@@ -657,7 +658,7 @@ async function detectLandmarks(base) {
     return null;
   }
 }
-const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, fail) => setTimeout(() => fail(new Error('timeout')), ms))]);
+const withTimeout = (promise, ms) => {let timer;return Promise.race([promise,new Promise((_,fail)=>{timer=setTimeout(()=>fail(new Error('timeout')),ms);})]).finally(()=>clearTimeout(timer));};
 async function segmentPerson(base) {
   // Person mask (0..1 per pixel): the subject gets drawn and shaded, the background stays bare paper.
   try {
@@ -688,6 +689,7 @@ function loadLineArt() {
   lineArtPromise ??= (async () => {
     if (!window.ort) await loadScript(`${ORT}ort.min.js`);
     ort.env.wasm.wasmPaths = ORT;
+    ort.env.wasm.proxy = true; // Keep model inference off the UI thread.
     ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
     return ort.InferenceSession.create(LINEART_MODEL, { executionProviders:['wasm'] });
   })().catch(error => { lineArtPromise = null; throw error; });
@@ -1468,7 +1470,7 @@ function orderHatching(list, from) {
 // The signature is whatever the user types (an empty field signs the default name). "David Lee." keeps the hand-shaped
 // Allura skeleton above; any other name is written in a script font (Allura for Latin letters, Nanum Brush Script for
 // Hangul) and traced like the handwritten line. A trailing full stop becomes the final "탁" tap.
-const SIGN_FONT = '"Allura", "Nanum Brush Script", cursive', DEFAULT_SIGNATURE = 'David Lee.', SKELETON_SIGNATURE = 'David Lee.';
+const SIGN_FONT = '"Allura", "Nanum Brush Script", cursive', DEFAULT_SIGNATURE = '', SKELETON_SIGNATURE = 'David Lee.';
 const signGlyphCache = new Map();
 function signatureGlyphs(text) {
   const typed = (text ?? '').trim() || DEFAULT_SIGNATURE;
@@ -1870,10 +1872,10 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
 
   // Timeline in raw units, then scaled so the last stroke ends exactly before the outro.
   const entry = { x:W + 320, y:H * .95 }; let t = 0, px = entry.x, py = entry.y; // the hand comes in from off the easel, lower right
-  for (const s of strokes) {
+  for (const [strokeIndex,s] of strokes.entries()) {
     const d = Math.hypot(s.x[0] - px, s.y[0] - py);
     s.tLift = t; t += s.chain ? 8 + d * .1 : KIND[s.kind].lift + d * .09;
-    s.tDown = t; t += prepareStrokeMotion(s, strokes.indexOf(s)) / KIND[s.kind].speed; s.tUp = t;
+    s.tDown = t; t += prepareStrokeMotion(s, strokeIndex) / KIND[s.kind].speed; s.tUp = t;
     px = s.x[s.n - 1]; py = s.y[s.n - 1];
   }
   DrawingHand.schedule(strokes, t, drawMs, leadMs, introMs);
@@ -1887,6 +1889,16 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
     }
   }
   if (signature) strokes.push(...signatureStrokes(signature, finaleMs, random(4321), pace, frame, !!glyphs?.letter));
+  if(document.querySelector('#framing').value==='original'&&!frame){
+    const writing=strokes.filter(st=>st.message||st.kind==='sign'||st.kind==='dot');
+    if(writing.length){
+      let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+      for(const st of writing)for(let j=0;j<st.n;j++){x0=Math.min(x0,st.x[j]);x1=Math.max(x1,st.x[j]);y0=Math.min(y0,st.y[j]);y1=Math.max(y1,st.y[j]);}
+      const scale=Math.min(1,b.w*.9/Math.max(1,x1-x0),b.h*.45/Math.max(1,y1-y0));
+      const x=b.x+(b.w-(x1-x0)*scale)/2,y=b.y+b.h-16-(y1-y0)*scale;
+      for(const st of writing)for(let j=0;j<st.n;j++){st.x[j]=x+(st.x[j]-x0)*scale;st.y[j]=y+(st.y[j]-y0)*scale;}
+    }
+  }
   const exitMs = Math.min(700, outroMs * .75);
 
   return { letter:!!glyphs?.letter, strokes, totalMs, drawEndMs, exitMs, talk, entry, exit:{ x:W + 340, y:H * 1.1 }, faceEndMs, outside:A.outside, faithful, croquis, ai:!!ai, polaroid:frame,
@@ -1895,7 +1907,12 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
 
 // ───────────────────────── rendering ─────────────────────────
 let cursor = { stroke:0, point:0, time:-1 };
-function resetInk() { letterCtx.clearRect(0,0,W,H); inkCtx.clearRect(0, 0, W, H); notesCtx.clearRect(0, 0, W, H); revealCtx.clearRect(0, 0, W, H); cursor = { stroke:0, point:0, time:-1 }; }
+function resetInk() {
+  for(const g of [letterCtx,inkCtx,notesCtx,revealCtx,aiFrameCtx]){
+    g.setTransform(1,0,0,1,0,0);g.globalAlpha=1;g.globalCompositeOperation='source-over';g.filter='none';g.clearRect(0,0,g.canvas.width,g.canvas.height);if(g===aiFrameCtx)g.scale(2,2);
+  }
+  talkSnapshot=null;cursor={stroke:0,point:0,time:-1};
+}
 function revealSegment(s, i) {
   revealCtx.lineWidth = s.revealWidth ?? REVEAL_RADIUS * 2 + 1;
   revealCtx.beginPath(); revealCtx.moveTo(s.x[i], s.y[i]); revealCtx.lineTo(s.x[i + 1], s.y[i + 1]); revealCtx.stroke();
@@ -1994,7 +2011,7 @@ function drawPencil(pen) {
   ctx.restore();
 }
 function renderFrame(t) {
-  ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.imageSmoothingQuality = 'high';
+  ctx.setTransform(1,0,0,1,0,0); ctx.globalCompositeOperation='source-over'; ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(sceneCanvas, 0, 0, VIEW_W, VIEW_H);
   const gallery = document.querySelector('#presentation')?.value === 'gallery';
   if (gallery) {
@@ -2002,7 +2019,7 @@ function renderFrame(t) {
     wash.addColorStop(0, '#283e4a'); wash.addColorStop(1, '#09171f');
     ctx.fillStyle = wash; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.save(); ctx.shadowColor = '#0009'; ctx.shadowBlur = 45; ctx.shadowOffsetY = 16;
-    ctx.fillStyle = '#bfa477'; ctx.fillRect(BOARD.x - 8, BOARD.y - 8, BOARD.w + 16, BOARD.h + 16); ctx.restore();
+    ctx.fillStyle = '#faf8f2'; ctx.fillRect(BOARD.x, BOARD.y, BOARD.w, BOARD.h); ctx.restore();
   }
   drawCustomBackground();
   if (plan?.polaroid) {
@@ -2014,7 +2031,7 @@ function renderFrame(t) {
       const p = plan.polaroid; ctx.drawImage(notes, 0, 0);
       ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 2 / p.s; ctx.strokeRect(p.x0, p.y0, p.side, p.side); // the picture's edge
     });
-  } else onSheet(() => { ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); drawSheet(t); });
+  } else onSheet(() => { ctx.beginPath(); ctx.rect(BOARD.pageX||0, BOARD.pageY||0, BOARD.pageW||W, BOARD.pageH||H); ctx.clip(); drawSheet(t); });
   drawTalk(t);
   drawPolaroid(t);
   drawLetter();
@@ -2026,7 +2043,7 @@ function renderFrame(t) {
 }
 DrawingHand.ready.then(() => redrawStill());
 // ───────────────────────── shorts title ─────────────────────────
-let TITLE_FONT = '"Black Han Sans", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+let TITLE_FONT = '"Nanum Pen Script", "Malgun Gothic", sans-serif';
 function titleLayout(text) {
   // Up to two lines in the wall space above the canvas board, as large as fits: shorts-caption style.
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 2);
@@ -2149,25 +2166,29 @@ function polaroidBackdrop() {
 
 // ───────────────────────── pencil sound ─────────────────────────
 function buildAudioEvents(strokes) {
-  const pressure={construct:.45,contour:.85,accent:1,fill:.7,hatch:.72,sign:.8,dot:1};
-  return strokes.filter(s=>s.tUp>s.tDown).map(s=>{
-    const duration=s.tUp-s.tDown,count=Math.max(4,Math.ceil(duration/16));
-    const samples=[];
-    const position=t=>{if(s.n<2)return {x:s.x[0],y:s.y[0]};const k=strokeProgress(s,t),i=Math.min(s.n-2,Math.floor(k)),f=k-i;return {x:lerp(s.x[i],s.x[i+1],f),y:lerp(s.y[i],s.y[i+1],f)};};
-    for(let j=0;j<=count;j++){
-      const u=j/count,t=s.tDown+duration*u;
-      const before=Math.max(s.tDown,t-6),after=Math.min(s.tUp,t+6);
-      const p=position(before),q=position(after);
-      const speed=Math.hypot(q.x-p.x,q.y-p.y)/Math.max(.001,(after-before)/1000);
-      const intensity=speed/(speed+1800);
-      const edge=Math.min(1,u/.18,(1-u)/.20);
-      samples.push({time:t,level:edge*(pressure[s.kind]||.7)*(.18+.45*intensity),freq:900+900*intensity,speed});
-    }
-    return {start:s.tDown,end:s.tUp,samples};
+  // One audible "쓱" per gesture: quick strokes are grouped into ~150ms swishes,
+  // and every swish is followed by a short silence so the sound never smears into a hiss.
+  const level = { construct:.4, contour:.9, accent:1, fill:.7, hatch:.75, sign:.85 };
+  const merged = []; let cur = null, tap = null;
+  for (const s of strokes) {
+    if (s.kind === 'dot') { tap = s; continue; } // the full stop gets its own sharp tap below
+    if (cur && cur.kind === s.kind && s.tDown - cur.end < 45 && cur.end - cur.start < 150) { cur.end = s.tUp; cur.level = Math.max(cur.level, level[s.kind]); continue; }
+    if (cur) merged.push(cur);
+    cur = { start:s.tDown, end:s.tUp, level:level[s.kind], kind:s.kind };
+  }
+  if (cur) merged.push(cur);
+  const events = []; let flip = 0;
+  merged.forEach((e, i) => {
+    const next = merged[i + 1];
+    if (next) e.end = Math.min(e.end, next.start - 55);
+    if (e.end - e.start < 45) { if (next && next.start - e.start < 100) return; e.end = e.start + 45; }
+    flip ^= 1; // alternate stroke direction: slightly brighter on the push, softer on the pull
+    events.push({ start:e.start, end:Math.min(e.end, e.start + 420), level:e.level * (flip ? 1 : .8), freq:flip ? 2600 : 1900 });
   });
+  if (tap) events.push({ start:tap.tDown, end:tap.tDown + 40, level:1.6, freq:1250, tap:true });
+  return events;
 }
-
-const volumeGain = percent => (percent / 100) * .28;
+const volumeGain = percent => (percent / 100) * .5;
 function createPencilVoice(ac, destination) {
   // Pink noise modulated by tiny random scratches (paper tooth), band-limited to the papery mid range.
   const rate = ac.sampleRate, buffer = ac.createBuffer(1, rate * 3, rate), data = buffer.getChannelData(0), rnd = random(99);
@@ -2176,35 +2197,30 @@ function createPencilVoice(ac, destination) {
   for (let i = 0; i < data.length; i++) {
     const white = rnd() * 2 - 1;
     b0 = .99765 * b0 + white * .099046; b1 = .963 * b1 + white * .2965164; b2 = .57 * b2 + white * 1.0526913;
-    if (rnd() < 90 / rate) grain = .08 + rnd() * .08;
+    if (rnd() < 400 / rate) grain = .5 + rnd() * .5;
     grain *= decay;
     data[i] = (b0 + b1 + b2 + white * .1848) * .25 * (.45 + grain);
     energy += data[i] * data[i];
   }
-  const norm = .18 / Math.sqrt(energy / data.length);
+  const norm = .25 / Math.sqrt(energy / data.length);
   for (let i = 0; i < data.length; i++) data[i] = clamp(data[i] * norm, -1, 1);
-  // Fade the loop seam over 8 ms so repeated noise cannot click.
-  const seam=Math.round(rate*.008);
-  for(let i=0;i<seam;i++){const fade=.5-.5*Math.cos(Math.PI*i/seam);data[i]*=fade;data[data.length-1-i]*=fade;}
   const src = ac.createBufferSource(); src.buffer = buffer; src.loop = true;
   const filter = (type, f, q, gain = 0) => { const node = ac.createBiquadFilter(); node.type = type; node.frequency.value = f; node.Q.value = q; node.gain.value = gain; return node; };
-  const color = filter('peaking', 1300, .5, 1), env = ac.createGain(), out = ac.createGain();
+  const color = filter('peaking', 2200, 1.1, 6), env = ac.createGain(), out = ac.createGain();
   env.gain.value = 0; out.gain.value = volumeGain(Number(volume?.value ?? 20));
-  src.connect(filter('highpass', 350, .7)).connect(filter('lowpass', 2600, .7)).connect(color).connect(env).connect(out).connect(destination);
+  src.connect(filter('highpass', 700, .7)).connect(filter('lowpass', 5500, .6)).connect(color).connect(env).connect(out).connect(destination);
   src.start();
   return { env, color, out };
 }
 function scheduleStrokes(voice, events, startAt) {
-  const gain=voice.env.gain,color=voice.color.frequency;
-  for(const e of events){
-    for(let i=0;i<e.samples.length;i++){
-      const sample=e.samples[i],t=startAt+sample.time/1000;
-      if(i===0){gain.setValueAtTime(0,t);color.setValueAtTime(sample.freq,t);}
-      else {gain.linearRampToValueAtTime(sample.level,t);color.linearRampToValueAtTime(sample.freq,t);}
-    }
+  const g = voice.env.gain;
+  for (const e of events) {
+    const a = startAt + e.start / 1000, z = startAt + e.end / 1000, attack = Math.min(.04, (z - a) * .35);
+    voice.color.frequency.setValueAtTime(e.freq, a);
+    if (e.tap) { g.setValueAtTime(0, a); g.linearRampToValueAtTime(e.level, a + .003); g.setTargetAtTime(0, a + .006, .012); continue; } // "탁"
+    g.setValueAtTime(0, a); g.linearRampToValueAtTime(e.level, a + attack); g.linearRampToValueAtTime(e.level * .6, z); g.setTargetAtTime(0, z, .015);
   }
 }
-
 const sound = {
   ac:null,
   ensure() {
@@ -2237,7 +2253,16 @@ function configureLayout() {
   let board;
   if(landscape) board={w:660,x:630,y:160};
   else board={w:980,x:50,y:Math.round((h-980*H/W)*.42)};
-  board.h=board.w*H/W; board.s=board.w/W;
+  board.pageX=0;board.pageY=0;board.pageW=W;board.pageH=H;
+  if(analysis && document.querySelector('#framing').value==='original' && !polaroidToggle.checked){
+    const b=analysis.b;
+    board.pageX=Math.max(0,b.x-12);board.pageY=Math.max(0,b.y-12);
+    board.pageW=Math.min(W-board.pageX,b.w+24);board.pageH=Math.min(H-board.pageY,b.h+24);
+    // Keep handwritten content on the sheet, even when the source is panoramic.
+    board.s=Math.min((w-120)/board.pageW,(h-240)/board.pageH);
+    board.w=board.pageW*board.s;board.h=board.pageH*board.s;
+    board.x=(w-board.w)/2;board.y=150+(h-240-board.h)/2;
+  }else{board.h=board.w*H/W;board.s=board.w/W;}
   const changed=VIEW_W!==w || VIEW_H!==h || BOARD.w!==board.w || BOARD.x!==board.x || BOARD.y!==board.y;
   VIEW_W=w; VIEW_H=h;
   if(canvas.width!==w || canvas.height!==h) {canvas.width=w;canvas.height=h;}
@@ -2268,8 +2293,8 @@ function drawCustomBackground() {
   const image=backgroundImages.get(document.querySelector('#presentation').value);if(!image)return;
   const scale=Math.max(VIEW_W/image.width,VIEW_H/image.height),w=image.width*scale,h=image.height*scale;
   ctx.drawImage(image,(VIEW_W-w)/2,(VIEW_H-h)/2,w,h);
-  ctx.save();ctx.shadowColor='#0006';ctx.shadowBlur=24;ctx.shadowOffsetY=12;ctx.fillStyle='#ad8c62';
-  ctx.fillRect(BOARD.x-8,BOARD.y-8,BOARD.w+16,BOARD.h+16);ctx.restore();
+  ctx.save();ctx.shadowColor='#0006';ctx.shadowBlur=24;ctx.shadowOffsetY=12;ctx.fillStyle='#faf8f2';
+  ctx.fillRect(BOARD.x,BOARD.y,BOARD.w,BOARD.h);ctx.restore();
 }
 async function loadBackgrounds() {
   try {
@@ -2291,11 +2316,11 @@ async function loadBackgrounds() {
     if(backgroundImages.size)document.querySelector('#backgroundHelp').textContent='초상화와 편지를 돋보이게 하는 배경을 선택하세요.';
   } catch { /* The two built-in backgrounds remain available offline. */ }
 }
-function savePhotoWords(){if(photos[selectedPhoto])photos[selectedPhoto].words={title:titleInput.value,message:messageInput.value,signature:signatureInput.value};}
-function applyPhotoWords(item){if(!item?.words)return;titleInput.value=item.words.title;messageInput.value=item.words.message;signatureInput.value=item.words.signature;document.querySelector("#signaturePreset").value=["David Lee.","Yoonseul Lee."].includes(signatureInput.value)?signatureInput.value:"custom";}
+function savePhotoWords(){if(photos[selectedPhoto])photos[selectedPhoto].words={message:messageInput.value};}
+function applyPhotoWords(item){messageInput.value=item?.words?.message||'';}
 function rememberPhoto() {
   savePhotoWords();
-  if(photos[selectedPhoto]) Object.assign(photos[selectedPhoto],{source,analysis,plan});
+  if(photos[selectedPhoto]) Object.assign(photos[selectedPhoto],{source,analysis,plan,planKey:null});
   projectSegments=[];
 }
 function updateProjectSummary() {
@@ -2333,37 +2358,45 @@ function renderQueue() {
 }
 function restoreSelectedPhoto(index=selectedPhoto) {
   if(!photos[index])return;
-  selectedPhoto=index;({source,analysis,plan}=photos[index]);applyPhotoWords(photos[index]);resetInk();
+  selectedPhoto=index;({source,analysis,plan}=photos[index]);applyPhotoWords(photos[index]);configureLayout();resetInk();
 }
 async function addPhotos(files) {
  if(!files.length)return;stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);
  let first=-1,failed=0;
  try{for(const file of files){const url=URL.createObjectURL(file),image=new Image();image.src=url;
- try{await image.decode();if(first<0)first=photos.length;photos.push({name:file.name,url,source:image,analysis:null,plan:null,words:{title:autoSuggest.checked?(pickPhrase('title','')||''):'',message:autoSuggest.checked?(pickPhrase('message','')||''):'',signature:DEFAULT_SIGNATURE}});}catch{URL.revokeObjectURL(url);failed++;}}
+ try{await image.decode();if(first<0)first=photos.length;photos.push({name:file.name,url,source:image,analysis:null,plan:null,words:{message:''}});}catch{URL.revokeObjectURL(url);failed++;}}
  if(first>=0)restoreSelectedPhoto(first);renderFrame(0);renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장은 열 수 없습니다. 나머지 사진을 정리한 뒤 만들기를 눌러 주세요.`:'사진을 목록에 담았습니다. 필요 없는 사진을 지운 뒤 만들기를 눌러 주세요.';
  }finally{photoInput.value='';setBusy(false);}
 }
-function projectReady(){if(photos.length&&photos.every(p=>p.analysis))return true;status.textContent='사진을 정리한 뒤 만들기 버튼을 눌러 주세요.';document.querySelector('#createArtwork').scrollIntoView({block:'center',behavior:'smooth'});return false;}
+function projectReady(){if(photos.length&&photos.every(p=>p.analysis))return true;status.textContent='설정이 변경되었거나 아직 분석하지 않은 사진이 있습니다. 위의 만들기 · 선택한 사진 분석 버튼을 눌러 주세요.';const notice=document.querySelector('#processingNotice');notice.hidden=false;notice.textContent=status.textContent;setTimeout(()=>{if(busyBox.hidden)notice.hidden=true;},7000);document.querySelector('#createArtwork').scrollIntoView({block:'center',behavior:'smooth'});return false;}
 document.querySelector('#createArtwork').addEventListener('click',async()=>{
  if(!photos.length){status.textContent='사진을 먼저 추가해 주세요.';return;}
  stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);showBusy('선택한 사진을 분석하고 있습니다…');let failed=0;
  try{for(let i=0;i<photos.length;i++){const item=photos[i];showBusy(`${i+1}/${photos.length} · ${item.name}\n사진을 분석하고 그림을 만들고 있습니다`);await nextPaint();
  try{if(!item.analysis)item.analysis=await analyzePhoto(item.source);if(['ai','croquis'].includes(styleSelect.value))await ensureLineArt(item.analysis);applyPhotoWords(item);await ensureDrawingFonts();}catch(e){item.analysis=null;failed++;console.error(e);}}
- restoreSelectedPhoto();if(!failed){rebuild();prepareProject();renderFrame(plan.totalMs);}renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장을 만들지 못했습니다. 해당 사진을 삭제하거나 다시 만들기를 눌러 주세요.`:'완성했습니다. 사진별 문구를 수정하거나 영상과 사진으로 저장하세요.';
+ restoreSelectedPhoto();if(!failed){rebuild();await prepareProject();renderFrame(plan.totalMs);}renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장을 만들지 못했습니다. 해당 사진을 삭제하거나 다시 만들기를 눌러 주세요.`:'완성했습니다. 사진별 문구를 수정하거나 영상과 사진으로 저장하세요.';
  }finally{hideBusy();setBusy(false);}
 });
 document.querySelector('#wordsPhoto').addEventListener('change',event=>{clearTimeout(messageTimer);stopPlayback();savePhotoWords();restoreSelectedPhoto(Number(event.target.value));rebuild();renderFrame(plan?.totalMs||0);renderQueue();updateProjectSummary();});
 for(const input of [titleInput,messageInput,signatureInput])input.addEventListener('input',savePhotoWords);
-function prepareProject() {
+async function prepareProject() {
   configureLayout();
   if(!photos.length){projectSegments=[];return;}
   savePhotoWords();
-  projectSegments=photos.map((item,i)=>{
+  projectSegments=[];
+  for(let i=0;i<photos.length;i++){
+    const item=photos[i];
+    showBusy(`${i+1}/${photos.length} · 영상 장면을 준비하고 있습니다…`);
+    await nextPaint();
     applyPhotoWords(item);
-    const sign=signatureToggle.checked?signatureGlyphs(signatureInput.value):null;
-    item.plan=buildPlan(item.analysis,Number(seconds.value),Number(strength.value),styleSelect.value,sign,introToggle.checked,messageInput.value,talkToggle.checked,polaroidToggle.checked);
-    return {item,start:i*Number(seconds.value)*1000};
-  });
+    const key=JSON.stringify([seconds.value,strength.value,styleSelect.value,signatureToggle.checked,signatureInput.value,introToggle.checked,messageInput.value,talkToggle.checked,polaroidToggle.checked]);
+    if(!item.plan || item.planKey!==key){
+      const sign=signatureToggle.checked?signatureGlyphs(signatureInput.value):null;
+      item.plan=buildPlan(item.analysis,Number(seconds.value),Number(strength.value),styleSelect.value,sign,introToggle.checked,messageInput.value,talkToggle.checked,polaroidToggle.checked);
+      item.planKey=key;
+    }
+    projectSegments.push({item,start:i*Number(seconds.value)*1000});
+  }
   restoreSelectedPhoto();
 }
 async function ensureProjectLineArt() {
@@ -2371,11 +2404,11 @@ async function ensureProjectLineArt() {
   for(const item of photos) if(item.analysis && !item.analysis.ai && !item.analysis.aiFailed) await ensureLineArt(item.analysis);
 }
 function projectDuration(){return projectSegments.length?projectSegments.length*Number(seconds.value)*1000:plan.totalMs;}
-function projectAudio(){return projectSegments.length?projectSegments.flatMap(({item,start})=>item.plan.audio.map(e=>({...e,start:e.start+start,end:e.end+start,samples:e.samples.map(s=>({...s,time:s.time+start}))}))):plan.audio;}
+function projectAudio(){return projectSegments.length?projectSegments.flatMap(({item,start})=>item.plan.audio.map(e=>({...e,start:e.start+start,end:e.end+start}))):plan.audio;}
 function renderProject(t) {
   if(projectSegments.length){
     const segment=projectSegments[Math.min(projectSegments.length-1,Math.max(0,Math.floor(t/(Number(seconds.value)*1000))))];
-    if(plan!==segment.item.plan){({source,analysis,plan}=segment.item);applyPhotoWords(segment.item);resetInk();}
+    if(plan!==segment.item.plan){({source,analysis,plan}=segment.item);applyPhotoWords(segment.item);configureLayout();resetInk();}
     renderFrame(clamp(t-segment.start,0,plan.totalMs));
   }else renderFrame(t);
 }
@@ -2383,7 +2416,7 @@ document.querySelector('#signaturePreset').addEventListener('change',event=>{
   if(event.target.value!=='custom')signatureInput.value=event.target.value;
   signatureInput.dispatchEvent(new Event('input'));signatureInput.focus();
 });
-signatureInput.addEventListener('input',()=>{document.querySelector('#signaturePreset').value=['David Lee.','Yoonseul Lee.'].includes(signatureInput.value)?signatureInput.value:'custom';});
+signatureInput.addEventListener('input',()=>{document.querySelector('#signaturePreset').value=['','David Lee.','Yoonseul Lee.'].includes(signatureInput.value)?signatureInput.value:'custom';});
 document.querySelector('#titleFont').addEventListener('change',async event=>{
   TITLE_FONT=event.target.value==='serif'?'"Batang", "AppleMyungjo", serif':`"${event.target.value}", "Malgun Gothic", sans-serif`;
   stopPlayback();await ensureTitleFont();redrawStill();
@@ -2401,7 +2434,7 @@ async function keepAwake(on) { // keep a phone's screen on while playing or reco
   } catch {}
 }
 async function play({ onDone, restore=true }) {
-  stopPlayback(); clearTimeout(messageTimer); await ensureDrawingFonts(); await ensureProjectLineArt(); prepareProject(); resetInk(); keepAwake(true);
+  stopPlayback(); clearTimeout(messageTimer); setBusy(true); showBusy('미리보기를 준비하고 있습니다…'); await nextPaint(); await ensureDrawingFonts(); await ensureProjectLineArt(); await prepareProject(); resetInk(); hideBusy(); keepAwake(true);
   setBusy(true); preview.disabled=false;
   const useAudio = soundToggle.checked && sound.ensure();
   let clock;
@@ -2449,7 +2482,7 @@ function setBusy(busy) {
   for(const id of ["createArtwork","resetProject","wordsPhoto"])document.getElementById(id).disabled=busy;
   document.querySelector(".upload").setAttribute("aria-disabled",String(busy));
   document.querySelector("#uploadLabel").textContent=busy?"처리 중입니다…":"사진 선택하기";
-  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (signatureInput) signatureInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy; if (handMotionToggle) handMotionToggle.disabled = busy; if (polaroidToggle) polaroidToggle.disabled = busy; if (suggestButton) suggestButton.disabled = busy; if (singerSelect) singerSelect.disabled = busy;
+  preview.disabled = busy; exportButton.disabled = busy; photoInput.disabled = busy; seconds.disabled = busy; styleSelect.disabled = busy; darkness.disabled = busy; formatSelect.disabled = busy; if (signatureToggle) signatureToggle.disabled = busy; if (titleInput) titleInput.disabled = busy; if (introToggle) introToggle.disabled = busy; if (messageInput) messageInput.disabled = busy; if (signatureInput) signatureInput.disabled = busy; if (talkToggle) talkToggle.disabled = busy; if (handToggle) handToggle.disabled = busy; if (handMotionToggle) handMotionToggle.disabled = busy; if (polaroidToggle) polaroidToggle.disabled = busy;
   for (const id of ['framing', 'presentation', 'seek', 'compare', 'saveStill', 'orientation', 'titleFont', 'signaturePreset']) document.getElementById(id).disabled = busy;
   document.querySelectorAll('#photoQueue button').forEach(b=>b.disabled=busy||b.dataset.boundary==='true');
   document.querySelectorAll('#backgroundChoices button').forEach(b=>b.disabled=busy);
@@ -2462,7 +2495,7 @@ for (const range of SLIDERS) {
   const box = numberBox(range); if (!box) continue;
   range.addEventListener('input', () => { box.value = range.value; });
   box.addEventListener('change', () => {
-    const typed = Math.round(Number(box.value)), value = Number.isFinite(typed) && box.value !== '' ? clamp(typed, Number(range.min), Number(range.max)) : Number(range.value);
+    const typed = Math.round(Number(box.value)/Number(range.step||1))*Number(range.step||1), value = Number.isFinite(typed) && box.value !== '' ? clamp(typed, Number(range.min), Number(range.max)) : Number(range.value);
     box.value = value;
     if (Number(range.value) !== value) { range.value = value; range.dispatchEvent(new Event('input')); }
   });
@@ -2537,72 +2570,6 @@ titleInput?.addEventListener('input', () => {
   redrawStill();
 });
 document.fonts?.load(`100px ${TITLE_FONT}`, '가나다 ABC').then(redrawStill).catch(() => {}); // the title font arrives from the web
-// ───────────────────────── fan phrase suggestions ─────────────────────────
-// A title and a handwritten line for the chosen singer, from phrases.js: the singer's own phrases (drawn twice as often) plus
-// the shared ones with the name filled in. Choosing a photo fills them automatically, but only into fields that are empty or
-// still hold an earlier suggestion — never over words the user typed. "다른 추천" always draws both again.
-// Phrases that went into a saved video are never suggested again (remembered on this device), so no two uploads repeat.
-const singerSelect = document.querySelector('#singer'), suggestButton = document.querySelector('#suggest'), autoSuggest = document.querySelector('#autoSuggest');
-const phraseCount = document.querySelector('#phraseCount'), resetPhrases = document.querySelector('#resetPhrases');
-const suggested = { title:false, message:false }; // true while a field holds a suggestion rather than the user's own words
-const fieldInput = field => field === 'title' ? titleInput : messageInput;
-const USED_KEY = 'renewal.pencil.usedPhrases';
-const usedPhrases = (() => { try { return new Set(JSON.parse(localStorage.getItem(USED_KEY) || '[]')); } catch { return new Set(); } })();
-const storeUsed = () => { try { localStorage.setItem(USED_KEY, JSON.stringify([...usedPhrases])); } catch {} };
-function phrasePool(field) { // the singer's own phrases twice, the shared ones once — minus everything already uploaded
-  if (typeof FAN_PHRASES === 'undefined' || singerSelect.value === 'none') return [];
-  const kind = field === 'title' ? 'titles' : 'lines', singer = singerSelect.value, own = singer === '공통' ? [] : FAN_PHRASES[singer]?.[kind] ?? [];
-  const shared = FAN_PHRASES.공통[kind].filter(p => singer !== '공통' || !p.includes('{name}')).map(p => p.replaceAll('{name}', singer));
-  return [...own, ...own, ...shared].filter(p => !usedPhrases.has(p));
-}
-function pickPhrase(field, current) {
-  const pool = phrasePool(field).filter(p => p !== current);
-  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
-}
-function updatePhraseCount() {
-  if (!phraseCount) return;
-  const left = field => new Set(phrasePool(field)).size;
-  phraseCount.textContent = `남은 추천: 제목 ${left('title')}개 · 손글씨 ${left('message')}개${usedPhrases.size ? ` (영상에 쓴 문구 ${usedPhrases.size}개 제외)` : ''}`;
-  if (resetPhrases) resetPhrases.hidden = !usedPhrases.size;
-}
-function markPhrasesUsed() { // called once a video has actually been saved
-  for (const field of ['title', 'message']) { const text = fieldInput(field).value.trim(); if (text) usedPhrases.add(text); }
-  storeUsed(); updatePhraseCount();
-}
-function fillSuggestion(fields) {
-  if(singerSelect.value === 'none') return;
-  let changed = false, exhausted = false;
-  for (const field of fields) {
-    const input = fieldInput(field), next = pickPhrase(field, input.value);
-    if (!next) { exhausted = true; continue; }
-    input.value = next; suggested[field] = changed = true;
-  }
-  if (exhausted) status.textContent = '이 가수의 추천 문구를 모두 사용했습니다. 문구를 직접 입력하거나 사용 기록을 초기화해 주세요.';
-  if (!changed) return;
-  stopPlayback(); preview.textContent = '미리보기';
-  if (analysis) rebuild(); else redrawStill();
-}
-resetPhrases?.addEventListener('click', () => {
-  if (!confirm(`영상에 쓴 문구 ${usedPhrases.size}개를 다시 추천할까요?\n같은 문구가 채널에 중복으로 올라갈 수 있어요.`)) return;
-  usedPhrases.clear(); storeUsed(); updatePhraseCount();
-});
-const autoFields = () => ['title', 'message'].filter(field => suggested[field] || !fieldInput(field).value.trim());
-titleInput?.addEventListener('input', () => { suggested.title = false; });
-messageInput?.addEventListener('input', () => { suggested.message = false; });
-suggestButton?.addEventListener('click', () => fillSuggestion(['title', 'message']));
-singerSelect?.addEventListener('change', () => {
-  try { localStorage.setItem('renewal.pencil.singer', singerSelect.value); } catch {}
-  updatePhraseCount();
-  if(singerSelect.value === 'none') { titleInput.value=''; messageInput.value=''; suggested.title=false; suggested.message=false; stopPlayback(); rebuild(); redrawStill(); return; }
-  fillSuggestion(['title', 'message'].filter(field => suggested[field])); // a new singer replaces only the suggestions
-});
-autoSuggest?.addEventListener('change', () => { try { localStorage.setItem('renewal.pencil.autoSuggest', autoSuggest.checked ? '1' : '0'); } catch {} });
-try { // remember the singer and the auto-fill choice on this device
-  const singer = localStorage.getItem('renewal.pencil.singer'), auto = localStorage.getItem('renewal.pencil.autoSuggest');
-  if (singer && [...singerSelect.options].some(o => o.value === singer)) singerSelect.value = singer;
-  if (auto !== null) autoSuggest.checked = auto === '1';
-} catch {}
-updatePhraseCount();
 darkness.addEventListener('input', () => {
   inkDarkness = Number(darkness.value) / 100;
   if (!plan) return; // no re-analysis needed: just redraw the finished sketch with the new pressure
@@ -2621,7 +2588,7 @@ preview.addEventListener('click', async () => {
   scrollToCanvas();
   if (session) { stopPlayback(); preview.textContent = '미리보기'; renderFrame(plan.totalMs); return; }
   preview.textContent = '정지'; status.textContent = '연필로 한 획씩 스케치하고 있습니다…';
-  await play({ onDone:() => { preview.textContent = '미리보기'; status.textContent = '연필 스케치가 완성되었습니다.'; } });
+  try{await play({ onDone:() => { preview.textContent = '미리보기'; status.textContent = '연필 스케치가 완성되었습니다.'; } });}catch(error){stopPlayback();hideBusy();setBusy(false);preview.textContent='미리보기';status.textContent=`미리보기를 준비하지 못했습니다. 만들기 버튼으로 다시 시도해 주세요. (${error.message})`;}
 });
 // Recording formats, best first. MP4 (H.264 + AAC) opens almost everywhere; WebM is the long-standing browser format.
 const RECORD_TYPES = {
@@ -2639,7 +2606,7 @@ function saveVideo(blob, ext, wanted) {
   const url = URL.createObjectURL(blob), link = document.createElement('a');
   const d = new Date(), pad = v => String(v).padStart(2, '0'), stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   link.href = url; link.download = `pencil-sketch-${stamp}.${ext}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
-  markPhrasesUsed(); // this video's title and line are now uploaded material: never suggest them again
+   // this video's title and line are now uploaded material: never suggest them again
   const where = /Android/i.test(navigator.userAgent) ? ' 휴대폰의 "다운로드" 폴더(내 파일 → 다운로드)에 저장됩니다. 편집 앱에서 불러오세요.' : '';
   status.textContent = (ext === wanted ? `${ext.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 저장을 지원하지 않아 ${ext.toUpperCase()}로 저장했습니다.`) + where;
 }
@@ -2681,9 +2648,7 @@ async function encodePencilAudio(config, seconds) {
     for(let base=0;base<seconds;base+=30) {
       const duration=Math.min(30,seconds-base),oac=new OfflineAudioContext(channels,Math.round(duration*AUDIO_RATE),AUDIO_RATE);
       const relevant=events.filter(e=>e.end>=base*1000&&e.start<(base+duration)*1000).map(e=>{
-        const samples=e.samples.filter(s=>s.time>=base*1000).map(s=>({...s,time:s.time-base*1000}));
-        if(e.start<base*1000) {const before=e.samples.filter(s=>s.time<base*1000).at(-1);if(before)samples.unshift({...before,time:0});}
-        return {...e,samples};
+        return {...e,start:Math.max(0,e.start-base*1000),end:Math.min(duration*1000,e.end-base*1000)};
       });
       scheduleStrokes(createPencilVoice(oac,oac.destination),relevant,0);
       const buffer=await oac.startRendering();
@@ -2702,7 +2667,7 @@ async function encodePencilAudio(config, seconds) {
   if (failure) throw failure;
   return chunks;
 }
-const yieldToPage = () => new Promise(resolve => { const channel = new MessageChannel(); channel.port1.onmessage = () => resolve(); channel.port2.postMessage(0); }); // not throttled like setTimeout
+const yieldToPage = () => new Promise(resolve => { const channel = new MessageChannel(); channel.port1.onmessage = () => {channel.port1.close();channel.port2.close();resolve();}; channel.port2.postMessage(0); }); // not throttled like setTimeout
 async function buildVideo(format, encoders, onProgress) {
   const spec = MUXERS[format];
   if (!window[spec.global]) await withTimeout(loadScript(spec.src), 30000);
@@ -2756,7 +2721,7 @@ exportButton.addEventListener('click', async () => {
   const token = session = {}; keepAwake(true); // `session` keeps still-preview redraws from touching the canvas mid-build
   try {
     await ensureTitleFont(); // never put a first frame with fallback glyphs in the title
-    await ensureDrawingFonts(); await ensureProjectLineArt(); rebuild(); prepareProject();
+    await ensureDrawingFonts(); await ensureProjectLineArt(); rebuild(); await prepareProject();
     if (handToggle?.checked) await DrawingHand.ready;
     let format = wanted, encoders = await pickEncoders(wanted, withAudio);
     if (!encoders) { format = other; encoders = await pickEncoders(other, withAudio); }
@@ -2775,7 +2740,7 @@ exportButton.addEventListener('click', async () => {
     console.error(error); status.textContent = `영상을 만들지 못했습니다. 다시 시도해 주세요. (${error?.message ?? error})`;
   } finally {
     if (session === token) session = null;
-    keepAwake(false); setBusy(false); updateExportLabel(); exportButton.style.removeProperty('--progress'); restoreSelectedPhoto(); resetInk(); renderFrame(plan.totalMs);
+    keepAwake(false); hideBusy(); setBusy(false); updateExportLabel(); exportButton.style.removeProperty('--progress'); restoreSelectedPhoto(); resetInk(); renderFrame(plan.totalMs);
   }
 });
 renderFrame(0);
@@ -2816,7 +2781,7 @@ document.querySelector('#saveStill').addEventListener('click',async()=>{
 document.querySelector('#resetProject').addEventListener('click',()=>{
  stopPlayback();clearTimeout(messageTimer);clearStillDownloads();photos.forEach(p=>URL.revokeObjectURL(p.url));photos.length=0;selectedPhoto=-1;projectSegments=[];source=analysis=plan=null;
  for(const el of document.querySelectorAll('input,textarea,select')){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=el.defaultChecked;else if(el.tagName==='SELECT'){const option=[...el.options].find(o=>o.defaultSelected)||el.options[0];if(option)el.value=option.value;}else el.value=el.defaultValue;}
- titleInput.value='';messageInput.value='';signatureInput.value=DEFAULT_SIGNATURE;autoSuggest.checked=false;singerSelect.value='none';TITLE_FONT='"Black Han Sans", "Malgun Gothic", sans-serif';inkDarkness=Number(darkness.value)/100;sound.setVolume(Number(volume.value));document.querySelectorAll("#backgroundChoices button").forEach(b=>b.setAttribute("aria-pressed","false"));resetInk();configureLayout();renderFrame(0);renderQueue();updateProjectSummary();preview.textContent='미리보기';seekControl.value=1000;seekTime.textContent='완성 장면';compareButton.setAttribute('aria-pressed','false');hideBusy();setBusy(false);updateExportLabel();status.textContent='새 작업을 시작합니다. 사진을 추가한 뒤 만들기를 눌러 주세요.';document.querySelector('#stage').classList.remove('is-expanded');document.querySelector('#stage').style.removeProperty('--preview-width');document.querySelector('#expandCanvas').setAttribute('aria-pressed','false');document.querySelector('#expandCanvas').textContent='화면 폭으로 확대';window.scrollTo({top:0,behavior:'smooth'});
+ titleInput.value='';messageInput.value='';signatureInput.value=DEFAULT_SIGNATURE;TITLE_FONT='"Nanum Pen Script", "Malgun Gothic", sans-serif';inkDarkness=Number(darkness.value)/100;sound.setVolume(Number(volume.value));document.querySelectorAll("#backgroundChoices button").forEach(b=>b.setAttribute("aria-pressed","false"));resetInk();configureLayout();renderFrame(0);renderQueue();updateProjectSummary();preview.textContent='미리보기';seekControl.value=1000;seekTime.textContent='완성 장면';compareButton.setAttribute('aria-pressed','false');hideBusy();setBusy(false);updateExportLabel();status.textContent='새 작업을 시작합니다. 사진을 추가한 뒤 만들기를 눌러 주세요.';document.querySelector('#stage').classList.remove('is-expanded');document.querySelector('#stage').style.removeProperty('--preview-width');document.querySelector('#expandCanvas').setAttribute('aria-pressed','false');document.querySelector('#expandCanvas').textContent='화면 폭으로 확대';window.scrollTo({top:0,behavior:'smooth'});
 });
 
 document.querySelector('#presentation').addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; document.querySelectorAll('#backgroundChoices button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.background===document.querySelector('#presentation').value))); redrawStill(); });

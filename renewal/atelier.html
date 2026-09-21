@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>새 작업실 · 팬심 한 자루</title>
+  <title>새 작업실 · 추억 한 자루</title>
   <meta name="description" content="사진을 넣으면 연필이 한 획씩 초상화를 그려 나가는 영상을 만듭니다." />
-  <meta name="application-name" content="팬심 한 자루" />
-  <meta name="apple-mobile-web-app-title" content="팬심 한 자루" />
+  <meta name="application-name" content="추억 한 자루" />
+  <meta name="apple-mobile-web-app-title" content="추억 한 자루" />
   <meta name="theme-color" content="#f6f0e3" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
@@ -19,10 +19,10 @@
 <link rel="stylesheet" href="atelier.css">
 </head>
 <body>
-  <nav class="studio-nav" aria-label="사이트 메뉴"><a href="index.html" class="studio-brand">팬심 한 자루<span> PHOTO TO MEMORY</span></a><a href="index.html#guide">사용 안내</a><a href="index.html">홈으로 ↗</a></nav>
+  <nav class="studio-nav" aria-label="사이트 메뉴"><a href="index.html" class="studio-brand">추억 한 자루<span> PHOTO TO MEMORY</span></a><a href="index.html#guide">사용 안내</a><a href="index.html">홈으로 ↗</a></nav>
   <a class="skip-link" href="#stage">미리보기로 건너뛰기</a>
 
-  <header class="atelier-heading"><div><p class="atelier-kicker">FANSIM ATELIER / 01</p><h1>당신의 마음을 그리는 작업실.</h1><p>사진을 고르고, 큰 화면으로 바라보고, 나만의 작품으로 간직하세요.</p></div><a href="#stage" class="atelier-jump">큰 미리보기로 ↓</a></header>
+  <header class="atelier-heading"><div><p class="atelier-kicker">MEMORY ATELIER / 01</p><h1>당신의 마음을 그리는 작업실.</h1><p>사진을 고르고, 큰 화면으로 바라보고, 나만의 작품으로 간직하세요.</p></div><a href="#stage" class="atelier-jump">큰 미리보기로 ↓</a><figure class="atelier-cover"><img src="assets/site/process.webp" alt="연필과 종이가 놓인 따뜻한 작업 공간"><figcaption>내 사진으로 만드는 작은 예술<span>나의 일상 · 가족의 추억 · 함께한 순간</span></figcaption></figure></header>
 
 
   <main class="layout">
@@ -36,6 +36,7 @@
       <p id="uploadProgress" class="upload-progress" role="status" hidden></p>
       <input id="photo" class="visually-hidden" type="file" accept="image/*" multiple />
       <p class="help">여러 사진을 한 번에 선택하거나 추가하세요. 필요 없는 사진을 삭제한 다음 만들기를 누르면 분석을 시작합니다.</p>
+              <div class="field quick-orientation"><label for="orientation">영상 방향</label><select id="orientation"><option value="portrait">세로 · 9:16 (1080 × 1920)</option><option value="landscape">가로 · 16:9 롱폼 (1920 × 1080)</option></select></div>
       <div class="draft-actions"><button id="createArtwork" type="button" class="btn btn-primary">만들기 · 선택한 사진 분석</button><button id="resetProject" type="button" class="btn btn-secondary">새 작업 · 초기화</button></div>
       <div id="photoQueue" class="photo-queue" aria-label="사진 순서"></div>
       <p id="projectSummary" class="help" aria-live="polite"></p>
@@ -53,7 +54,7 @@
       <div class="preview-tools">
         <label for="seek">장면 확인 <output id="seekTime">완성 장면</output></label>
         <input id="seek" type="range" min="0" max="1000" value="1000" aria-label="영상 장면 탐색" />
-        <div class="review-actions"><button id="compare" type="button" class="btn btn-secondary" aria-pressed="false">원본 비교</button><button id="saveStill" type="button" class="btn btn-secondary">완성 사진 각각 저장 (PNG)</button></div>
+        <div class="review-actions"><button id="compare" type="button" class="btn btn-secondary" aria-pressed="false">원본 비교</button></div>
       </div>
       <div id="stillDownloads" class="still-downloads" aria-live="polite"></div><p class="help center">얼굴 위치가 틀리면 캔버스에서 얼굴을 눌러 주세요.</p>
     </section>
@@ -61,43 +62,24 @@
     <!-- 2. Words -->
     <section class="card step step-words" aria-labelledby="stepWords">
       <h2 id="stepWords" class="step-title"><span class="step-no" aria-hidden="true">2</span>마음을 담는 문구</h2>
-      <div class="field"><label for="wordsPhoto">문구를 넣을 사진</label><select id="wordsPhoto"><option value="">사진을 먼저 추가해 주세요</option></select><p class="help">선택한 사진의 제목·편지·서명만 수정합니다. 빈칸으로 두면 문구를 넣지 않습니다.</p></div>
-      <div class="suggest" role="group" aria-labelledby="suggestLabel">
-        <p id="suggestLabel" class="group-label">팬심 문구 추천</p>
-        <div class="suggest-row">
-          <label class="visually-hidden" for="singer">가수</label>
-          <select id="singer">
-            <option value="none">문구 없이 · 빈칸</option>
-            <option value="임영웅" selected>임영웅</option>
-            <option value="이찬원">이찬원</option>
-            <option value="영탁">영탁</option>
-            <option value="공통">가수 이름 없이</option>
-          </select>
-          <button id="suggest" type="button" class="btn btn-secondary icon icon-shuffle">다른 추천</button>
-        </div>
-        <label class="check"><input id="autoSuggest" type="checkbox" checked /><span>사진 올리면 제목·손글씨 자동 추천</span></label>
-        <p class="help">팬이 전하는 마음으로 쓴 문구예요. 가수가 한 말이 아닙니다.</p>
-        <div class="phrase-count">
-          <p id="phraseCount" class="help" aria-live="polite">남은 추천 문구를 세는 중…</p>
-          <button id="resetPhrases" type="button" class="btn btn-link" hidden>사용 기록 초기화</button>
-        </div>
-      </div>
+
       <div class="field">
         <label for="title">영상 제목</label>
-        <textarea id="title" rows="2" maxlength="60" placeholder="예) 임영웅 연필 초상화&#10;20초 만에 그려보기" aria-describedby="titleHelp"></textarea>
+        <textarea id="title" rows="2" maxlength="60" placeholder="영상 제목을 입력해 주세요" aria-describedby="titleHelp"></textarea>
         <p id="titleHelp" class="help">최대 2줄 · Enter로 줄바꿈</p>
         <label for="titleFont">제목 글꼴</label>
-        <select id="titleFont"><option value="Black Han Sans">힘 있는 제목</option><option value="Nanum Gothic">단정한 고딕</option><option value="Nanum Pen Script">다정한 손글씨</option><option value="Nanum Brush Script">붓으로 쓴 편지</option><option value="serif">차분한 명조</option></select>
+        <select id="titleFont"><option value="Black Han Sans">힘 있는 제목</option><option value="Nanum Gothic">단정한 고딕</option><option value="Nanum Pen Script" selected>다정한 손글씨</option><option value="Nanum Brush Script">붓으로 쓴 편지</option><option value="serif">차분한 명조</option></select>
       </div>
+      <div class="field"><label for="wordsPhoto">편지를 쓸 사진</label><select id="wordsPhoto"><option value="">사진을 먼저 추가해 주세요</option></select><p class="help">손글씨 편지만 사진별로 저장합니다. 제목·글꼴·서명은 모든 사진에 동일하게 적용됩니다.</p></div>
       <div class="field">
         <label for="message">손글씨 편지</label>
         <textarea id="message" rows="12" maxlength="4000" placeholder="전하고 싶은 마음을 편지로 써 주세요.&#10;Enter로 줄을 바꿀 수 있습니다." aria-describedby="messageHelp"></textarea>
         <p id="messageHelp" class="help">최대 4,000자 · 10줄 이상 입력 가능. 편지는 그림 위에 직접 씁니다. 내용이 길면 사진 한 장당 시간을 늘려 주세요. 선택한 사진에만 적용됩니다.</p>
       </div>
       <div class="field">
-        <label for="signatureText">서명</label>
-        <select id="signaturePreset" aria-label="서명 선택"><option>David Lee.</option><option>Yoonseul Lee.</option><option value="custom">직접 입력</option></select>
-        <input id="signatureText" type="text" maxlength="40" value="David Lee." placeholder="서명을 직접 수정할 수 있습니다" aria-describedby="signatureHelp" />
+        <label class="check"><input id="signature" type="checkbox" /><span>모든 사진에 서명 넣기</span></label><label for="signatureText">서명</label>
+        <select id="signaturePreset" aria-label="서명 선택"><option value="" selected>서명 없음</option><option>David Lee.</option><option>Yoonseul Lee.</option><option value="custom">직접 입력</option></select>
+        <input id="signatureText" type="text" maxlength="40" value="" placeholder="서명을 직접 수정할 수 있습니다" aria-describedby="signatureHelp" />
         <p id="signatureHelp" class="help">필기체로 서명합니다 · 긴 편지를 쓰면 아래쪽에 배치합니다 · 끝에 마침표(.)를 넣으면 "탁" 점을 찍어요</p>
       </div>
     </section>
@@ -110,10 +92,10 @@
         <legend>영상</legend>
         <div class="field slider">
           <label for="seconds">사진 한 장당 길이</label>
-          <span class="num"><input id="secondsNum" type="number" inputmode="numeric" min="4" max="600" step="1" value="30" aria-label="사진 한 장당 영상 길이(초)" />초</span>
-          <input id="seconds" type="range" min="4" max="600" value="30" />
+          <span class="num"><input id="secondsNum" type="number" inputmode="numeric" min="10" max="600" step="10" value="20" aria-label="사진 한 장당 영상 길이(초)" />초</span>
+          <input id="seconds" type="range" min="10" max="600" value="20" step="10" />
         </div>
-        <div class="field"><label for="orientation">영상 방향</label><select id="orientation"><option value="portrait">세로 · 9:16 (1080 × 1920)</option><option value="landscape">가로 · 16:9 롱폼 (1920 × 1080)</option></select></div>
+
         <div class="field">
           <label for="format">저장 형식</label>
           <select id="format">
@@ -128,7 +110,7 @@
         <div class="field">
           <label for="framing">사진 구도</label>
           <select id="framing"><option value="original">원본 전체 · 손과 소품 보존</option><option value="face" selected>얼굴 중심 세로 확대</option></select>
-          <p class="help">가로 사진은 위아래에 여백이 생깁니다. 얼굴 확대는 손이나 소품을 자를 수 있습니다.</p>
+          <p class="help">원본 전체는 사진 비율에 맞춘 종이에 크게 그립니다. 얼굴 확대는 손이나 소품을 자를 수 있습니다.</p>
         </div>
         <div class="field">
           <label for="style">그림 스타일</label>
@@ -141,13 +123,13 @@
         </div>
         <div class="field slider">
           <label for="darkness">선 진하기</label>
-          <span class="num"><input id="darknessNum" type="number" inputmode="numeric" min="50" max="200" step="1" value="100" aria-label="선 진하기(%)" />%</span>
-          <input id="darkness" type="range" min="50" max="200" value="100" />
+          <span class="num"><input id="darknessNum" type="number" inputmode="numeric" min="50" max="200" step="10" value="100" aria-label="선 진하기(%)" />%</span>
+          <input id="darkness" type="range" min="50" max="200" value="100" step="10" />
         </div>
         <div class="field slider">
           <label for="strength">그림자 해칭 양</label>
-          <span class="num"><input id="strengthNum" type="number" inputmode="numeric" min="0" max="100" step="1" value="40" aria-label="그림자 해칭 양(%)" />%</span>
-          <input id="strength" type="range" min="0" max="100" value="40" />
+          <span class="num"><input id="strengthNum" type="number" inputmode="numeric" min="0" max="100" step="10" value="40" aria-label="그림자 해칭 양(%)" />%</span>
+          <input id="strength" type="range" min="0" max="100" value="40" step="10" />
         </div>
         <label class="check"><input id="polaroidSketch" type="checkbox" /><span>폴라로이드 사진처럼 스케치하기<small>한 줄 문구·서명은 흰 여백에, 여러 줄 편지는 그림 위에 씁니다</small></span></label>
         <label class="check"><input id="hand" type="checkbox" checked /><span>내 손과 팔로 그리기</span></label>
@@ -163,8 +145,8 @@
           <div id="backgroundChoices" class="background-choices" aria-label="배경 미리보기"></div>
         </div>
         <label class="check"><input id="intro" type="checkbox" checked /><span>시작할 때 원본 사진 보여주기</span></label>
-        <label class="check"><input id="signature" type="checkbox" checked /><span>마지막에 서명 넣기</span></label>
-        <label class="check"><input id="talk" type="checkbox" /><span>마지막에 그림이 손글씨 문장을 말하기<small>입이 움직여요 · 팬 문구에는 끄는 것을 권장</small></span></label>
+
+        <label class="check"><input id="talk" type="checkbox" /><span>마지막에 그림이 손글씨 문장을 말하기<small>입이 움직이는 연출을 추가합니다</small></span></label>
       </fieldset>
 
       <fieldset>
@@ -182,10 +164,11 @@
   <div id="processingNotice" class="processing-notice" role="status" hidden></div>
   <div class="action-bar" role="group" aria-label="영상 만들기">
     <button id="preview" type="button" class="btn btn-secondary icon icon-play">미리보기</button>
+    <button id="saveStill" type="button" class="btn btn-secondary icon icon-download">사진 저장</button>
     <button id="export" type="button" class="btn btn-primary icon icon-download">MP4 영상 저장</button>
   </div>
 
-  <script src="phrases.js"></script>
+
   <script src="portrait.js"></script>
   <script src="hand-motion.js"></script>
   <script src="atelier-app.js"></script>
