@@ -690,6 +690,16 @@ const REVEAL_RADIUS = 3; // how far either side of the pencil's path the AI grap
 const loadScript = src => new Promise((resolve, reject) => {
   const tag = document.createElement('script'); tag.src = src; tag.onload = resolve; tag.onerror = () => reject(new Error(`cannot load ${src}`)); document.head.appendChild(tag);
 });
+let drawingEnginePromise=null;
+async function ensureDrawingEngine(){
+ if(styleSelect.value!=='graphite'||window.StudioGraphite?.build)return;
+ if(!drawingEnginePromise)drawingEnginePromise=(async()=>{
+  try{await withTimeout(loadScript('studio-graphite.js?v=20260923-engine1&retry='+Date.now()),15000);
+   if(!window.StudioGraphite?.build)throw Error('missing drawing engine');
+  }catch{throw Error('그리기 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하고 만들기를 다시 눌러 주세요. 사진은 그대로 유지됩니다.');}
+ })().finally(()=>{drawingEnginePromise=null;});
+ await drawingEnginePromise;
+}
 function loadLineArt() {
   lineArtPromise ??= (async () => {
     if (!window.ort) await loadScript(`${ORT}ort.min.js`);
@@ -2406,11 +2416,12 @@ async function addPhotos(files) {
 function projectReady(){if(photos.length&&photos.every(p=>p.analysis))return true;status.textContent='설정이 변경되었거나 아직 분석하지 않은 사진이 있습니다. 위의 만들기 · 선택한 사진 분석 버튼을 눌러 주세요.';const notice=document.querySelector('#processingNotice');notice.hidden=false;notice.textContent=status.textContent;setTimeout(()=>{if(busyBox.hidden)notice.hidden=true;},7000);document.querySelector('#createArtwork').scrollIntoView({block:'center',behavior:'smooth'});return false;}
 document.querySelector('#createArtwork').addEventListener('click',async()=>{
  if(!photos.length){status.textContent='사진을 먼저 추가해 주세요.';return;}
- stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);showBusy('선택한 사진을 분석하고 있습니다…');let failed=0;
- try{for(let i=0;i<photos.length;i++){const item=photos[i];showBusy(`${i+1}/${photos.length} · ${item.name}\n사진을 분석하고 그림을 만들고 있습니다`);await nextPaint();
+ stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);showBusy('선택한 사진을 분석하고 있습니다…');let failed=0,failureMessage='';
+ try{await ensureDrawingEngine();for(let i=0;i<photos.length;i++){const item=photos[i];showBusy(`${i+1}/${photos.length} · ${item.name}\n사진을 분석하고 그림을 만들고 있습니다`);await nextPaint();
  try{if(!item.analysis)item.analysis=await analyzePhoto(item.source);if(['ai','croquis','graphite'].includes(styleSelect.value))await ensureLineArt(item.analysis);applyPhotoWords(item);await ensureDrawingFonts();}catch(e){item.analysis=null;failed++;console.error(e);}}
  restoreSelectedPhoto();if(!failed){rebuild();await prepareProject();renderFrame(plan.totalMs);}renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장을 만들지 못했습니다. 해당 사진을 삭제하거나 다시 만들기를 눌러 주세요.`:'완성했습니다. 사진별 문구를 수정하거나 영상과 사진으로 저장하세요.';
- }finally{hideBusy();setBusy(false);}
+ }catch(error){console.error(error);status.textContent=error.message||'그림을 만들지 못했습니다. 만들기를 다시 눌러 주세요.';failureMessage=status.textContent;
+ }finally{hideBusy();setBusy(false);if(failureMessage){const notice=document.querySelector('#processingNotice');notice.textContent=failureMessage;notice.hidden=false;}}
 });
 document.querySelector('#wordsPhoto').addEventListener('change',event=>{clearTimeout(messageTimer);stopPlayback();savePhotoWords();restoreSelectedPhoto(Number(event.target.value));rebuild();renderFrame(plan?.totalMs||0);renderQueue();updateProjectSummary();});
 for(const input of [titleInput,messageInput,signatureInput])input.addEventListener('input',savePhotoWords);
@@ -2506,6 +2517,7 @@ function drawFaceGuide(box) {
 }
 function rebuild() {
   if (!analysis) {savePhotoWords();updateProjectSummary();return;}
+  if(styleSelect.value==='graphite'&&!window.StudioGraphite?.build){plan=null;status.textContent='그리기 엔진을 다시 불러와야 합니다. 만들기 버튼을 눌러 주세요.';return;}
   configureLayout();
   const sign = (signatureToggle?.checked ?? true) ? signatureGlyphs(signatureInput?.value) : null; // null for a moment while a script font loads
   plan = buildPlan(analysis, Number(seconds.value), Number(strength.value), styleSelect.value, sign, introToggle?.checked ?? true, messageInput?.value ?? '', talkToggle?.checked ?? false, polaroidToggle?.checked ?? false);
