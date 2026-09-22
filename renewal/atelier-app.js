@@ -593,7 +593,7 @@ function analyzeFace(base, face) { // everything that depends on where the face 
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) mask.data[((y + b.y) * W + x + b.x) * 4 + 3] = grown && grown[y * gw + x] < .25 ? 255 : 0;
   octx.putImageData(mask, 0, 0);
 
-  const A = { ...base, faithfulPortrait:null, studioMarks:null, line, ang, coh, shade, silhouette, hair, faceW, handW, detail, zone, far, subject, head, eyeW, outside, face, skinHi };
+  const A = { ...base, faithfulPortrait:null, studioMarks:null, studioRegions:null, line, ang, coh, shade, silhouette, hair, faceW, handW, detail, zone, far, subject, head, eyeW, outside, face, skinHi };
   A.contours = traceContours(A);
   A.fills = [...makeFills(A), ...makeFeatureMarks(A)];
   A.ai = base.lineMap ? traceLineArt(A) : null; // re-traced when the face is corrected, without re-running the model
@@ -2057,7 +2057,7 @@ function titleLayout(text) {
   // Up to two lines in the wall space above the canvas board, as large as fits: shorts-caption style.
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 2);
   if (!lines.length) return null;
-  const studioWide=document.querySelector('#presentation').value==='atelier'&&VIEW_W>VIEW_H;
+  const studioWide=isAtelier()&&VIEW_W>VIEW_H;
   const maxW = VIEW_W - 80, top = studioWide?VIEW_H*.85:56, bottom = studioWide?VIEW_H-35:BOARD.y-12, maxSize = studioWide?76:104, minSize = 44; // clear of the shorts top bar
   const width = (line, size) => { ctx.font = `${size}px ${TITLE_FONT}`; return ctx.measureText(line).width; };
   // One long line with spaces: break it near the middle rather than shrinking it to a whisper.
@@ -2108,7 +2108,7 @@ function redrawStill() { // refresh the still preview after a setting that doesn
   if (plan) { renderFrame(plan.totalMs); drawFaceGuide(); } else renderFrame(0);
 }
 function drawSheet(t) {
-  if(document.querySelector('#presentation').value!=='atelier'||!atelierPlates[VIEW_W>VIEW_H?'landscape':'portrait']||plan?.polaroid)ctx.drawImage(paperCanvas, 0, 0);
+  if(!isAtelier()||!currentAtelierPlate()||plan?.polaroid)ctx.drawImage(paperCanvas, 0, 0);
   if (!plan) return;
   advanceInk(t);
   if (plan.aiLayer) {
@@ -2257,8 +2257,24 @@ const letterCtx = letterInk.getContext('2d');
 letterCtx.strokeStyle=letterCtx.createPattern(graphite,'repeat'); letterCtx.lineCap='butt';
 const backgroundImages = new Map();
 const atelierPlates={};
-const atelierReady=Promise.all([['portrait','studio-portrait.png'],['landscape','studio-plate.png']].map(async([key,file])=>{const im=new Image();im.src='assets/atelier/'+file;await im.decode();atelierPlates[key]=im;})).then(()=>redrawStill()).catch(()=>{});
-function drawAtelierPlate(){if(document.querySelector('#presentation').value!=='atelier')return;const im=atelierPlates[VIEW_W>VIEW_H?'landscape':'portrait'];if(im)ctx.drawImage(im,0,0,VIEW_W,VIEW_H);}
+const atelierThemes=[
+ {id:'atelier',name:'햇살 화실 · 원목 이젤 (기본)',portrait:'studio-portrait.png',landscape:'studio-plate.png'},
+ {id:'atelier-garden',name:'초록 정원 화실',portrait:'garden-portrait.png',landscape:'garden-landscape.png'},
+ {id:'atelier-library',name:'저녁 서재 화실',portrait:'library-portrait.png',landscape:'library-landscape.png'}
+];
+function isAtelier(){return atelierThemes.some(t=>t.id===document.querySelector('#presentation').value);}
+function currentAtelierPlate(){return atelierPlates[document.querySelector('#presentation').value]?.[VIEW_W>VIEW_H?'landscape':'portrait'];}
+const atelierReady=Promise.all(atelierThemes.map(async theme=>{
+ atelierPlates[theme.id]={};
+ await Promise.all(['portrait','landscape'].map(async orientation=>{const im=new Image();im.src='assets/atelier/'+theme[orientation];await im.decode();atelierPlates[theme.id][orientation]=im;}));
+})).then(()=>redrawStill()).catch(()=>{});
+for(const theme of atelierThemes){
+ if(theme.id!=='atelier')document.querySelector('#presentation').add(new Option(theme.name,theme.id));
+ const button=document.createElement('button');button.type='button';button.className='background-choice';button.dataset.background=theme.id;button.setAttribute('aria-pressed',String(theme.id==='atelier'));
+ const img=document.createElement('img');img.src='assets/atelier/'+theme.portrait;img.alt='';const label=document.createElement('span');label.textContent=theme.name;button.append(img,label);
+ button.addEventListener('click',()=>{const select=document.querySelector('#presentation');select.value=theme.id;select.dispatchEvent(new Event('change'));});document.querySelector('#backgroundChoices').append(button);
+}
+function drawAtelierPlate(){if(!isAtelier())return;const im=currentAtelierPlate();if(im)ctx.drawImage(im,0,0,VIEW_W,VIEW_H);}
 
 function configureLayout() {
   const landscape=document.querySelector('#orientation').value==='landscape';
@@ -2277,7 +2293,7 @@ function configureLayout() {
     board.w=board.pageW*board.s;board.h=board.pageH*board.s;
     board.x=(w-board.w)/2;board.y=150+(h-240-board.h)/2;
   }else{board.h=board.w*H/W;board.s=board.w/W;}
-  if(document.querySelector('#presentation').value==='atelier'&&!polaroidToggle.checked){
+  if(isAtelier()&&!polaroidToggle.checked){
     const area=landscape?{x:417/1536*w,y:64/1024*h,w:697/1536*w,h:732/1024*h}:{x:150/1024*w,y:240/1536*h,w:724/1024*w,h:952/1536*h};
     board.s=Math.min((area.w-20)/board.pageW,(area.h-20)/board.pageH);board.w=board.pageW*board.s;board.h=board.pageH*board.s;board.x=area.x+(area.w-board.w)/2;board.y=area.y+(area.h-board.h)/2;
   }
@@ -2345,7 +2361,7 @@ function updateProjectSummary() {
   fileName.textContent=photos.length?`${photos.length}장 선택됨 · 사진 추가하기`:"JPG · PNG · WEBP";
   const count=photos.length || (analysis?1:0), requested=count*Number(seconds.value);
   const duration=Math.ceil(photos.length?photos.reduce((sum,p)=>sum+(p.plan?.totalMs||Number(seconds.value)*1000),0)/1000:(plan?.totalMs||requested*1000)/1000);
-  document.querySelector('#projectSummary').textContent=count?`${count}장 · 총 ${Math.floor(duration/60)}분 ${duration%60}초${duration>requested?' · 연필로 칠하는 동작을 보여주기 위해 시간이 자동으로 늘어났습니다.':' · 선택한 사진의 완성 장면을 미리 봅니다.'}`:'';
+  document.querySelector('#projectSummary').textContent=count?`${count}장 · 총 ${Math.floor(duration/60)}분 ${duration%60}초${duration>requested?' · 아틀리에 연필화는 최소 2분으로 제작합니다.':' · 선택한 사진의 완성 장면을 미리 봅니다.'}`:'';
   const lines=wrapLetter(messageInput.value.trim()).length, recommended=Math.min(600,Math.max(30,Math.ceil([...messageInput.value].length*.45+20)));
   document.querySelector('#messageHelp').textContent=`최대 4,000자 · 현재 ${lines}줄 (긴 줄은 자동 줄바꿈). ${lines>1?'그림 위에 직접 씁니다. ':''}${lines>16?'16줄을 넘으면 글씨가 작아집니다. ':''}${lines>1?`여유 있는 손글씨를 위해 한 장당 ${recommended}초 이상을 권합니다. `:''}선택한 사진에만 적용됩니다.`;
 }
@@ -2825,7 +2841,7 @@ document.querySelector('#saveStill').addEventListener('click',async()=>{
 document.querySelector('#resetProject').addEventListener('click',()=>{
  stopPlayback();clearTimeout(messageTimer);clearStillDownloads();photos.forEach(p=>URL.revokeObjectURL(p.url));photos.length=0;selectedPhoto=-1;projectSegments=[];source=analysis=plan=null;
  for(const el of document.querySelectorAll('input,textarea,select')){if(el.type==='file')el.value='';else if(el.type==='checkbox')el.checked=el.defaultChecked;else if(el.tagName==='SELECT'){const option=[...el.options].find(o=>o.defaultSelected)||el.options[0];if(option)el.value=option.value;}else el.value=el.defaultValue;}
- titleInput.value='';messageInput.value='';signatureInput.value=DEFAULT_SIGNATURE;TITLE_FONT='"Nanum Pen Script", "Malgun Gothic", sans-serif';inkDarkness=Number(darkness.value)/100;sound.setVolume(Number(volume.value));document.querySelectorAll("#backgroundChoices button").forEach(b=>b.setAttribute("aria-pressed","false"));resetInk();configureLayout();renderFrame(0);renderQueue();updateProjectSummary();preview.textContent='미리보기';seekControl.value=1000;seekTime.textContent='완성 장면';compareButton.setAttribute('aria-pressed','false');hideBusy();setBusy(false);updateExportLabel();status.textContent='새 작업을 시작합니다. 사진을 추가한 뒤 만들기를 눌러 주세요.';document.querySelector('#stage').classList.remove('is-expanded');document.querySelector('#stage').style.removeProperty('--preview-width');document.querySelector('#expandCanvas').setAttribute('aria-pressed','false');document.querySelector('#expandCanvas').textContent='화면 폭으로 확대';window.scrollTo({top:0,behavior:'smooth'});
+ titleInput.value='';messageInput.value='';signatureInput.value=DEFAULT_SIGNATURE;TITLE_FONT='"Nanum Pen Script", "Malgun Gothic", sans-serif';inkDarkness=Number(darkness.value)/100;sound.setVolume(Number(volume.value));document.querySelectorAll("#backgroundChoices button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.background===document.querySelector("#presentation").value)));resetInk();configureLayout();renderFrame(0);renderQueue();updateProjectSummary();preview.textContent='미리보기';seekControl.value=1000;seekTime.textContent='완성 장면';compareButton.setAttribute('aria-pressed','false');hideBusy();setBusy(false);updateExportLabel();status.textContent='새 작업을 시작합니다. 사진을 추가한 뒤 만들기를 눌러 주세요.';document.querySelector('#stage').classList.remove('is-expanded');document.querySelector('#stage').style.removeProperty('--preview-width');document.querySelector('#expandCanvas').setAttribute('aria-pressed','false');document.querySelector('#expandCanvas').textContent='화면 폭으로 확대';window.scrollTo({top:0,behavior:'smooth'});
 });
 
 document.querySelector('#presentation').addEventListener('change', () => { stopPlayback();configureLayout(); preview.textContent = '미리보기'; document.querySelectorAll('#backgroundChoices button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.background===document.querySelector('#presentation').value))); redrawStill(); });
