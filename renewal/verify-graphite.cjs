@@ -7,7 +7,7 @@ module.exports=async({chromium,server,root})=>{
  console.log(await page.evaluate(()=>({strokes:plan.strokes.length,studio:plan.studio,ai:!!analysis.ai,total:plan.totalMs})));
  await page.evaluate(()=>renderFrame(plan.totalMs*.48));fs.writeFileSync(path.join(out,'drawing.png'),Buffer.from(await page.evaluate(()=>canvas.toDataURL().split(',')[1]),'base64'));
  await page.evaluate(()=>{const first=canvas.toDataURL();resetInk();renderFrame(plan.totalMs);window.stablePixels=ctx.getImageData(0,0,VIEW_W,VIEW_H).data;resetInk();renderFrame(plan.totalMs);const now=ctx.getImageData(0,0,VIEW_W,VIEW_H).data;let max=0,sum=0;for(let i=0;i<now.length;i++){const d=Math.abs(now[i]-window.stablePixels[i]);max=Math.max(max,d);sum+=d;}if(max>3||sum/now.length>.02)throw Error('graphite repeat drift '+max);});await page.selectOption('#orientation','landscape');await page.evaluate(()=>renderFrame(plan.totalMs));fs.writeFileSync(path.join(out,'landscape.png'),Buffer.from(await page.evaluate(()=>canvas.toDataURL().split(',')[1]),'base64'));
- assert(await page.evaluate(()=>plan.studio&&!plan.aiLayer&&plan.strokes.length>10000));assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: graphite marks and studio composition');
+ assert(await page.evaluate(()=>plan.studio&&!plan.aiLayer&&StudioGraphite.marks(analysis).length>10000));assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: graphite marks and studio composition');
  if(process.argv.includes('--video')){const download=page.waitForEvent('download',{timeout:240000});await page.click('#export');await(await download).saveAs(path.join(out,'atelier.mp4'));console.log('PASS: studio MP4');}
  }finally{await browser.close();server.close();}
 };

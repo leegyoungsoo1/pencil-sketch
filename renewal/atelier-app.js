@@ -1925,6 +1925,7 @@ function revealSegment(s, i) {
 }
 let inkDarkness = Number(darkness.value) / 100; // "선 진하기": scales every stroke's graphite
 function drawSegment(s, i, g = inkCtx) {
+  if(s.inkGroups){for(const mark of s.inkGroups[i])for(let j=0;j<mark.n-1;j++)drawSegment(mark,j,g);return;}
   g._graphitePattern??=g.createPattern(graphite,'repeat');g.strokeStyle=s.studio?'#3e3933':g._graphitePattern;
   const p = (s.pr[i] + s.pr[i + 1]) / 2, a = s.alpha * p * inkDarkness;
   // Once a stroke is fully opaque, extra darkness presses harder: the line gets broader instead.
@@ -2342,8 +2343,9 @@ function rememberPhoto() {
 }
 function updateProjectSummary() {
   fileName.textContent=photos.length?`${photos.length}장 선택됨 · 사진 추가하기`:"JPG · PNG · WEBP";
-  const count=photos.length || (analysis?1:0), duration=count*Number(seconds.value);
-  document.querySelector('#projectSummary').textContent=count?`${count}장 × ${seconds.value}초 = 총 ${Math.floor(duration/60)}분 ${duration%60}초 · 선택한 사진의 완성 장면을 미리 봅니다.`:'';
+  const count=photos.length || (analysis?1:0), requested=count*Number(seconds.value);
+  const duration=Math.ceil(photos.length?photos.reduce((sum,p)=>sum+(p.plan?.totalMs||Number(seconds.value)*1000),0)/1000:(plan?.totalMs||requested*1000)/1000);
+  document.querySelector('#projectSummary').textContent=count?`${count}장 · 총 ${Math.floor(duration/60)}분 ${duration%60}초${duration>requested?' · 연필로 칠하는 동작을 보여주기 위해 시간이 자동으로 늘어났습니다.':' · 선택한 사진의 완성 장면을 미리 봅니다.'}`:'';
   const lines=wrapLetter(messageInput.value.trim()).length, recommended=Math.min(600,Math.max(30,Math.ceil([...messageInput.value].length*.45+20)));
   document.querySelector('#messageHelp').textContent=`최대 4,000자 · 현재 ${lines}줄 (긴 줄은 자동 줄바꿈). ${lines>1?'그림 위에 직접 씁니다. ':''}${lines>16?'16줄을 넘으면 글씨가 작아집니다. ':''}${lines>1?`여유 있는 손글씨를 위해 한 장당 ${recommended}초 이상을 권합니다. `:''}선택한 사진에만 적용됩니다.`;
 }
@@ -2412,19 +2414,22 @@ async function prepareProject() {
       item.plan=buildPlan(item.analysis,Number(seconds.value),Number(strength.value),styleSelect.value,sign,introToggle.checked,messageInput.value,talkToggle.checked,polaroidToggle.checked);
       item.planKey=key;
     }
-    projectSegments.push({item,start:i*Number(seconds.value)*1000});
+    const previous=projectSegments.at(-1);
+    projectSegments.push({item,start:previous?previous.start+previous.item.plan.totalMs:0});
   }
-  restoreSelectedPhoto();
+  restoreSelectedPhoto();updateProjectSummary();
 }
 async function ensureProjectLineArt() {
   if(!['ai','croquis','graphite'].includes(styleSelect.value))return;
   for(const item of photos) if(item.analysis && !item.analysis.ai && !item.analysis.aiFailed) await ensureLineArt(item.analysis);
 }
-function projectDuration(){return projectSegments.length?projectSegments.length*Number(seconds.value)*1000:plan.totalMs;}
+function projectDuration(){const last=projectSegments.at(-1);return last?last.start+last.item.plan.totalMs:plan.totalMs;}
 function projectAudio(){return projectSegments.length?projectSegments.flatMap(({item,start})=>item.plan.audio.map(e=>({...e,start:e.start+start,end:e.end+start}))):plan.audio;}
 function renderProject(t) {
   if(projectSegments.length){
-    const segment=projectSegments[Math.min(projectSegments.length-1,Math.max(0,Math.floor(t/(Number(seconds.value)*1000))))];
+    let lo=0,hi=projectSegments.length-1;
+    while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(projectSegments[mid].start<=t)lo=mid;else hi=mid-1;}
+    const segment=projectSegments[lo];
     if(plan!==segment.item.plan){({source,analysis,plan}=segment.item);applyPhotoWords(segment.item);configureLayout();resetInk();}
     renderFrame(clamp(t-segment.start,0,plan.totalMs));
   }else renderFrame(t);
@@ -2619,10 +2624,11 @@ for (const option of formatSelect.options) { // grey out a format this browser c
 if (formatSelect.selectedOptions[0]?.disabled) formatSelect.value = [...formatSelect.options].find(o => !o.disabled)?.value ?? 'webm';
 const updateExportLabel = () => { exportButton.textContent = `${formatSelect.value.toUpperCase()} 영상 저장`; };
 formatSelect.addEventListener('change', updateExportLabel); updateExportLabel();
+const videoCleanups=new WeakMap();
 function saveVideo(blob, ext, wanted) {
   const url = URL.createObjectURL(blob), link = document.createElement('a');
   const d = new Date(), pad = v => String(v).padStart(2, '0'), stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  link.href = url; link.download = `pencil-sketch-${stamp}.${ext}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+  link.href = url; link.download = `pencil-sketch-${stamp}.${ext}`; link.click(); setTimeout(() => {URL.revokeObjectURL(url);videoCleanups.get(blob)?.();}, 60000);
    // this video's title and line are now uploaded material: never suggest them again
   const where = /Android/i.test(navigator.userAgent) ? ' 휴대폰의 "다운로드" 폴더(내 파일 → 다운로드)에 저장됩니다. 편집 앱에서 불러오세요.' : '';
   status.textContent = (ext === wanted ? `${ext.toUpperCase()} 영상 저장이 완료되었습니다.` : `이 브라우저는 ${wanted.toUpperCase()} 저장을 지원하지 않아 ${ext.toUpperCase()}로 저장했습니다.`) + where;
@@ -2685,14 +2691,27 @@ async function encodePencilAudio(config, seconds) {
   return chunks;
 }
 const yieldToPage = () => new Promise(resolve => { const channel = new MessageChannel(); channel.port1.onmessage = () => {channel.port1.close();channel.port2.close();resolve();}; channel.port2.postMessage(0); }); // not throttled like setTimeout
-async function buildVideo(format, encoders, onProgress) {
+async function buildVideo(format, encoders, onProgress, {disk=false}={}) {
   const spec = MUXERS[format];
   if (!window[spec.global]) await withTimeout(loadScript(spec.src), 30000);
-  const { Muxer, ArrayBufferTarget } = window[spec.global], { video, audio } = encoders;
+  const { Muxer, ArrayBufferTarget, FileSystemWritableFileStreamTarget } = window[spec.global], { video, audio } = encoders;
   const frames = Math.ceil(projectDuration() / 1000 * FPS), seconds = frames / FPS; // The outro is already inside the selected duration.
-  const target = new ArrayBufferTarget();
+  let temporary=null;
+  if((disk||seconds>120)&&FileSystemWritableFileStreamTarget&&navigator.storage?.getDirectory){
+    const directory=await navigator.storage.getDirectory(),name=`pencil-export-${Date.now()}-${crypto.randomUUID()}.${format}`;
+    // Reclaim our abandoned temporary exports after a closed tab or crash.
+    for await(const old of directory.keys()){
+      const match=/^pencil-export-(\d+)-[\da-f-]+\.(mp4|webm)$/.exec(old);
+      if(match&&Date.now()-Number(match[1])>86400000)await directory.removeEntry(old).catch(()=>{});
+    }
+    const handle=await directory.getFileHandle(name,{create:true});
+    try{temporary={directory,name,handle,stream:await handle.createWritable()};}
+    catch(error){await directory.removeEntry(name);throw error;}
+  }
+  const target = temporary?new FileSystemWritableFileStreamTarget(temporary.stream):new ArrayBufferTarget();
+  try{
   const muxer = new Muxer({
-    target, firstTimestampBehavior:'offset', ...(format === 'mp4' ? { fastStart:'in-memory' } : {}),
+    target, firstTimestampBehavior:'offset', ...(format === 'mp4' ? { fastStart:temporary?false:'in-memory' } : {}),
     video:{ codec:video.mux, width:VIEW_W, height:VIEW_H, frameRate:FPS },
     ...(audio ? { audio:{ codec:audio.mux, numberOfChannels:audio.config.numberOfChannels, sampleRate:AUDIO_RATE } } : {}),
   });
@@ -2713,7 +2732,15 @@ async function buildVideo(format, encoders, onProgress) {
   await encoder.flush(); encoder.close();
   if (failure) throw failure;
   addSoundUntil(Infinity); muxer.finalize();
+  if(temporary){
+    await temporary.stream.close();const file=await temporary.handle.getFile();
+    videoCleanups.set(file,()=>temporary.directory.removeEntry(temporary.name).catch(()=>{}));return file;
+  }
   return new Blob([target.buffer], { type:`video/${format}` });
+  }catch(error){
+    if(temporary){await temporary.stream.abort().catch(()=>{});await temporary.directory.removeEntry(temporary.name).catch(()=>{});}
+    throw error;
+  }
 }
 async function recordRealtime(wanted, other) {
   // Fallback for browsers without WebCodecs: record the canvas while the drawing plays.

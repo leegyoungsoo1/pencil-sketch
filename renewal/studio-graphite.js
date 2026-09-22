@@ -58,31 +58,41 @@ window.StudioGraphite=(()=>{
   }
   return out;
  }
+ // Narrow pencil-side sweeps. Every source mark is deposited once, within
+ // a few pixels of the moving tip; no face regions or finished tone tiles.
  function localShading(list,A){
-  const {face,b}=A,groups=new Map();
+  const groups=new Map(),width=5,length=38,angleStep=.4;
   for(const s of list){
-   const x=s.x[1]-b.x,y=s.y[1]-b.y,nx=(x-face.x)/face.rx,ny=(y-face.y)/face.ry;
-   let region;
-   if(Math.abs(nx)<1.05&&ny>-.52&&ny<-.05)region=nx<0?0:1;
-   else if(Math.abs(nx)<.34&&ny>=-.05&&ny<.4)region=2;
-   else if(Math.abs(nx)<.65&&ny>=.4&&ny<.8)region=3;
-   else if(Math.hypot(nx,ny)<1.12)region=nx<0?4:5;
-   else if(ny<.6)region=6;
-   else region=7;
-   // All graphite densities/directions are mixed inside one small patch.
-   // Warp the patch grid gently so the moving edge never reads as square tiles.
-   const u=x+5*Math.sin(y*.13)+3*Math.sin(y*.037);
-   const v=y+5*Math.sin(x*.11)+3*Math.sin(x*.041);
-   const key=region+':'+Math.floor(u/10)+':'+Math.floor(v/10);
-   if(!groups.has(key))groups.set(key,{region,x:s.x[1],y:s.y[1],strokes:[]});
-   groups.get(key).strokes.push(s);
+   const angle=Math.atan2(s.y[2]-s.y[0],s.x[2]-s.x[0]);
+   const bin=Math.round(angle/angleStep),theta=bin*angleStep,c=Math.cos(theta),d=Math.sin(theta);
+   const u=s.x[1]*c+s.y[1]*d,v=-s.x[1]*d+s.y[1]*c;
+   const row=Math.floor(v/width),col=Math.floor((u+(row%2)*length*.5)/length),key=bin+':'+row+':'+col;
+   if(!groups.has(key))groups.set(key,{c,d,marks:[],min:Infinity,max:-Infinity,v:0});
+   const g=groups.get(key);g.marks.push({s,u});g.min=Math.min(g.min,u);g.max=Math.max(g.max,u);g.v+=v;
   }
-  let at={x:b.x+face.x-face.rx*.45,y:b.y+face.y-face.ry*.25};const out=[];
-  for(let region=0;region<8;region++){
-   const cells=[...groups.values()].filter(g=>g.region===region);
-   while(cells.length){let best=0,dist=Infinity;for(let i=0;i<cells.length;i++){const d=Math.hypot(cells[i].x-at.x,cells[i].y-at.y);if(d<dist){dist=d;best=i;}}
-    const cell=cells.splice(best,1)[0],ordered=nearest(cell.strokes,at);out.push(...ordered);const last=ordered.at(-1);at={x:last.x[last.n-1],y:last.y[last.n-1]};
+  const sweeps=[];
+  for(const g of groups.values()){
+   const v=g.v/g.marks.length,lo=g.min-1,hi=g.max+1,n=Math.max(2,Math.ceil((hi-lo)/1.5)+1);
+   const x=new Float32Array(n),y=new Float32Array(n),pr=new Float32Array(n).fill(.8),inkGroups=Array.from({length:n-1},()=>[]);
+   for(let i=0;i<n;i++){const u=lo+(hi-lo)*i/(n-1);x[i]=u*g.c-v*g.d;y[i]=u*g.d+v*g.c;}
+   for(const {s,u} of g.marks)inkGroups[Math.min(n-2,Math.floor((u-lo)/(hi-lo)*(n-1)))].push(s);
+   sweeps.push({x,y,pr,n,len:hi-lo,width:1,alpha:1,ghost:0,kind:'hatch',studio:true,inkGroups});
+  }
+  // Spatial index avoids an O(N²) nearest-neighbour search for dense photos.
+  const buckets=new Map(),size=48,key=(x,y)=>Math.floor(x/size)+':'+Math.floor(y/size);
+  for(const s of sweeps){const k=key(s.x[0],s.y[0]);if(!buckets.has(k))buckets.set(k,new Set());buckets.get(k).add(s);s.bucket=k;}
+  let at={x:A.b.x+A.face.x,y:A.b.y+A.face.y-A.face.ry*.25};const out=[];
+  while(buckets.size){
+   const cx=Math.floor(at.x/size),cy=Math.floor(at.y/size);let candidates=[];
+   for(let r=1;r<=24&&!candidates.length;r++)for(let yy=cy-r;yy<=cy+r;yy++)for(let xx=cx-r;xx<=cx+r;xx++){
+    const set=buckets.get(xx+':'+yy);if(set)candidates.push(...set);
    }
+   if(!candidates.length)candidates=[...buckets.values().next().value];
+   let best=candidates[0],distance=Infinity,reverse=false;
+   for(const s of candidates){const a=Math.hypot(s.x[0]-at.x,s.y[0]-at.y),b=Math.hypot(s.x[s.n-1]-at.x,s.y[s.n-1]-at.y);if(Math.min(a,b)<distance){distance=Math.min(a,b);best=s;reverse=b<a;}}
+   const set=buckets.get(best.bucket);set.delete(best);if(!set.size)buckets.delete(best.bucket);
+   if(reverse)best={...best,x:best.x.slice().reverse(),y:best.y.slice().reverse(),pr:best.pr.slice().reverse(),inkGroups:best.inkGroups.slice().reverse()};
+   out.push(best);at={x:best.x[best.n-1],y:best.y[best.n-1]};
   }
   return out;
  }
@@ -98,7 +108,7 @@ window.StudioGraphite=(()=>{
    {name:'형태 잡기',weight:.17,list:gestures},
    {name:'이목구비 그리기',weight:.20,list:details},
    {name:'머리카락과 옷의 선',weight:.14,list:rest.filter(s=>!finishing.has(s))},
-   {name:'부분별 명암 쌓기',weight:.44,list:localShading(shading,A),ordered:true},
+   {name:'연필로 명암 칠하기',weight:.44,list:localShading(shading,A),ordered:true},
    {name:'마지막 세부 묘사',weight:.05,list:accents}
   ].filter(p=>p.list.length);
   const lead=(base.intro?base.intro.hold+base.intro.fade:0)+650,duration=Math.max(100,base.drawEndMs-lead),weight=phases.reduce((n,p)=>n+p.weight,0);
@@ -106,16 +116,21 @@ window.StudioGraphite=(()=>{
   for(const phase of phases){
    const list=phase.ordered?phase.list:nearest(phase.list,at);let raw=0;
    for(let i=0;i<list.length;i++){
-    const s=list[i],gap=Math.hypot(s.x[0]-at.x,s.y[0]-at.y),speed=phase.ordered?3:1.5;
-    s.tLift=raw;raw+=phase.ordered?2+Math.min(70,gap*.7):24+Math.min(280,gap*1.3);
-    s.tDown=raw;raw+=prepareStrokeMotion(s,i)/speed+(phase.ordered?2:25);s.tUp=raw;
+    const s=list[i],gap=Math.hypot(s.x[0]-at.x,s.y[0]-at.y),speed=1.5;
+    s.tLift=raw;raw+=phase.ordered?25+gap*2:24+Math.min(280,gap*1.3);
+    const motion=prepareStrokeMotion(s,i);
+    s.tDown=raw;raw+=phase.ordered?Math.max(100,s.len/180*1000)*(1+.12*Math.sin(i*2.399)):motion/speed+25;s.tUp=raw;
     s.chapter=phase.name;at={x:s.x[s.n-1],y:s.y[s.n-1]};
    }
-   const span=duration*phase.weight/weight,scale=span/Math.max(1,raw);
+   const requested=duration*phase.weight/weight;
+   const span=phase.ordered?Math.max(requested,raw):Math.max(requested,list.length*70),scale=span/Math.max(1,raw);
    for(const s of list){s.tLift=start+s.tLift*scale;s.tDown=start+s.tDown*scale;s.tUp=start+s.tUp*scale;}
    chapters.push({name:phase.name,start,end:start+span,count:list.length});for(const s of list)drawing.push(s);start+=span;
   }
-  return {...base,strokes:[...drawing,...writing],chapters,ai:false,aiLayer:null,faithful:false,croquis:true,studio:true,faceEndMs:0,audio:buildAudioEvents([...drawing,...writing])};
+  const extension=Math.max(0,start-base.drawEndMs);
+  for(const s of writing){s.tLift+=extension;s.tDown+=extension;s.tUp+=extension;}
+  const talk=base.talk?{...base.talk,start:base.talk.start+extension,end:base.talk.end+extension,blinkAt:base.talk.blinkAt+extension,beats:base.talk.beats.map(b=>({...b,start:b.start+extension,end:b.end+extension}))}:null;
+  return {...base,totalMs:base.totalMs+extension,drawEndMs:start,talk,requestedMs:base.totalMs,strokes:[...drawing,...writing],chapters,ai:false,aiLayer:null,faithful:false,croquis:true,studio:true,faceEndMs:0,audio:buildAudioEvents([...drawing,...writing])};
  }
  return {marks,build};
 })();
