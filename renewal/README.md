@@ -19,3 +19,13 @@
 접속: 로컬 `/renewal/`, GitHub Pages `/pencil-sketch/renewal/`. 분석과 인코딩 라이브러리 일부는 인터넷에서 불러옵니다.
 
 추가 UI 검증: `node renewal/test-browser.cjs --public-controls` — 공통 서명·글꼴, 편지 분리, 10단위 조절, 파노라마 배치, 초기값 복원을 검사합니다. ONNX의 `env.wasm.proxy`를 켜 무거운 모델 추론을 Web Worker로 분리했습니다([공식 안내](https://onnxruntime.ai/docs/tutorials/web/env-flags-and-session-options.html)).
+
+## 아틀리에 연필화
+
+기본 그림 모드는 `아틀리에 연필화 · 섬세한 명암`, 배경은 `햇살 화실 · 원목 이젤`입니다. 기존 정밀 선화와 크로키도 선택 가능합니다. `얼굴 정밀 확대 · 초상화` 구도를 추가했습니다.
+
+`studio-graphite.js`는 원본의 명암과 윤곽 방향을 샘플링해 3회의 가는 연필 해칭과 세부 윤곽을 그립니다. 사진을 드러내는 마스크나 마지막 완성 이미지 전환을 사용하지 않습니다. 명암 획은 분석 결과에 캐시하며, 각 획의 이동·필압·소리와 영상 길이를 맞춥니다. 밝은 원본과 작은 얼굴은 제공할 수 있는 디테일 자체가 제한됩니다. 홈페이지의 생성 초상화와 모든 사진에서 동일한 미술적 결과를 보장하지는 않습니다.
+
+가로·세로 화실 배경의 실제 빈 종이 좌표에 그림을 합성합니다. 투명한 새 손 자산을 연필 끝에 정렬하며 피부를 변형하지 않습니다. 자산 및 생성 프롬프트는 `assets/atelier/`에 있습니다. 이전 손 코드는 `hand-original.js`에 보관했습니다.
+
+`node renewal/test-browser.cjs --graphite --video`는 실제 PNG·MP4 결과를 `.test-output/graphite/`에 저장합니다. `--art-review`는 이 결과의 비교 페이지를 캡처합니다. 테스트 출력과 입력 인물 사진은 배포 파일에 포함하지 않습니다.

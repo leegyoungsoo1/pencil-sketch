@@ -1,0 +1,13 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+module.exports=async({chromium,server,root})=>{
+ const out=path.join(root,'.test-output/graphite');fs.mkdirSync(out,{recursive:true});await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true,channel:'msedge'});
+ try{const page=await browser.newPage({viewport:{width:1400,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${server.address().port}/atelier.html`);
+ await page.locator('.settings summary').click();await page.selectOption('#framing','closeup');const fixture=process.env.SKETCH_TEST_IMAGE||path.join(process.env.USERPROFILE,'Desktop','ai테스트','임영웅1.jpg');await page.setInputFiles('#photo',fixture);await page.waitForFunction(()=>photos.length&&!photoInput.disabled);await page.click('#createArtwork');await page.waitForFunction(()=>plan&&!photoInput.disabled,null,{timeout:240000});
+ await page.evaluate(async()=>{await atelierReady;await DrawingHand.ready;renderFrame(plan.totalMs);});fs.writeFileSync(path.join(out,'portrait.png'),Buffer.from(await page.evaluate(()=>canvas.toDataURL().split(',')[1]),'base64'));
+ console.log(await page.evaluate(()=>({strokes:plan.strokes.length,studio:plan.studio,ai:!!analysis.ai,total:plan.totalMs})));
+ await page.evaluate(()=>renderFrame(plan.totalMs*.48));fs.writeFileSync(path.join(out,'drawing.png'),Buffer.from(await page.evaluate(()=>canvas.toDataURL().split(',')[1]),'base64'));
+ await page.evaluate(()=>{const first=canvas.toDataURL();resetInk();renderFrame(plan.totalMs);window.stablePixels=ctx.getImageData(0,0,VIEW_W,VIEW_H).data;resetInk();renderFrame(plan.totalMs);const now=ctx.getImageData(0,0,VIEW_W,VIEW_H).data;let max=0,sum=0;for(let i=0;i<now.length;i++){const d=Math.abs(now[i]-window.stablePixels[i]);max=Math.max(max,d);sum+=d;}if(max>3||sum/now.length>.02)throw Error('graphite repeat drift '+max);});await page.selectOption('#orientation','landscape');await page.evaluate(()=>renderFrame(plan.totalMs));fs.writeFileSync(path.join(out,'landscape.png'),Buffer.from(await page.evaluate(()=>canvas.toDataURL().split(',')[1]),'base64'));
+ assert(await page.evaluate(()=>plan.studio&&!plan.aiLayer&&plan.strokes.length>10000));assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: graphite marks and studio composition');
+ if(process.argv.includes('--video')){const download=page.waitForEvent('download',{timeout:240000});await page.click('#export');await(await download).saveAs(path.join(out,'atelier.mp4'));console.log('PASS: studio MP4');}
+ }finally{await browser.close();server.close();}
+};

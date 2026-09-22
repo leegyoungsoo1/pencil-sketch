@@ -379,7 +379,12 @@ async function analyzePhoto(img) {
       face = faceFromBox(Math.min(...xs), Math.min(...ys) + h * .12, w, h * .88, 'ai', [centroid(early.parts.irisL.map(i => early.mesh[i])), centroid(early.parts.irisR.map(i => early.mesh[i]))]);
     }
   }
-  const crop = document.querySelector('#framing')?.value === 'face' ? chooseCrop(img, base, face, early?.hands ?? []) : null;
+  const framing=document.querySelector('#framing')?.value;
+  let crop=framing==='face'?chooseCrop(img,base,face,early?.hands??[]):null;
+  if(framing==='closeup'&&face.source==='ai'){
+    const scale=img.naturalWidth/base.gw,aspect=(W-PAD*2)/(H-PAD*2),height=Math.min(img.naturalHeight,img.naturalWidth/aspect,face.ry*scale*3.8),width=height*aspect;
+    crop={x:clamp(face.x*scale-width/2,0,img.naturalWidth-width),y:clamp(face.y*scale-height*.46,0,img.naturalHeight-height),w:width,h:height};
+  }
   if (crop) {
     const zoomed = prepare(img, crop), refound = await detectFace(zoomed), s0 = img.naturalWidth / base.gw, k = zoomed.gw / crop.w;
     // If the detector misses on the zoomed crop, carry the original face over into crop coordinates.
@@ -588,7 +593,7 @@ function analyzeFace(base, face) { // everything that depends on where the face 
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) mask.data[((y + b.y) * W + x + b.x) * 4 + 3] = grown && grown[y * gw + x] < .25 ? 255 : 0;
   octx.putImageData(mask, 0, 0);
 
-  const A = { ...base, faithfulPortrait:null, line, ang, coh, shade, silhouette, hair, faceW, handW, detail, zone, far, subject, head, eyeW, outside, face, skinHi };
+  const A = { ...base, faithfulPortrait:null, studioMarks:null, line, ang, coh, shade, silhouette, hair, faceW, handW, detail, zone, far, subject, head, eyeW, outside, face, skinHi };
   A.contours = traceContours(A);
   A.fills = [...makeFills(A), ...makeFeatureMarks(A)];
   A.ai = base.lineMap ? traceLineArt(A) : null; // re-traced when the face is corrected, without re-running the model
@@ -1769,6 +1774,7 @@ function makeFaithfulPortrait(A) {
   return A.faithfulPortrait;
 }
 function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = null, showIntro = true, message = '', talking = false, polaroid = false) { // signature: from signatureGlyphs(), or null
+  if(style==='graphite')return StudioGraphite.build(A,buildPlan(A,durationSec,densityPercent,'line',signature,showIntro,message,talking,polaroid),densityPercent);
   const density = densityPercent / 100, rand = random(1234), { b, face } = A;
   const frame = polaroid ? polaroidWindow(A) : null;
   // In the polaroid style, lines that would fall outside the picture are never planned: the pencil only works where it shows.
@@ -1919,6 +1925,7 @@ function revealSegment(s, i) {
 }
 let inkDarkness = Number(darkness.value) / 100; // "선 진하기": scales every stroke's graphite
 function drawSegment(s, i, g = inkCtx) {
+  g._graphitePattern??=g.createPattern(graphite,'repeat');g.strokeStyle=s.studio?'#3e3933':g._graphitePattern;
   const p = (s.pr[i] + s.pr[i + 1]) / 2, a = s.alpha * p * inkDarkness;
   // Once a stroke is fully opaque, extra darkness presses harder: the line gets broader instead.
   const press = a > 1 ? Math.min(1.8, 1 + (a - 1) * .6) : 1;
@@ -2022,6 +2029,7 @@ function renderFrame(t) {
     ctx.fillStyle = '#faf8f2'; ctx.fillRect(BOARD.x, BOARD.y, BOARD.w, BOARD.h); ctx.restore();
   }
   drawCustomBackground();
+  drawAtelierPlate();
   if (plan?.polaroid) {
     // Polaroid style: blank canvas board, the card taped on it, the sketch in its picture window, the notes on its margin.
     ctx.save(); ctx.translate(BOARD.x, BOARD.y); ctx.scale(BOARD.s, BOARD.s); ctx.drawImage(paperCanvas, 0, 0); ctx.restore();
@@ -2048,7 +2056,8 @@ function titleLayout(text) {
   // Up to two lines in the wall space above the canvas board, as large as fits: shorts-caption style.
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 2);
   if (!lines.length) return null;
-  const maxW = VIEW_W - 80, top = 56, bottom = BOARD.y - 12, maxSize = 104, minSize = 44; // clear of the shorts top bar
+  const studioWide=document.querySelector('#presentation').value==='atelier'&&VIEW_W>VIEW_H;
+  const maxW = VIEW_W - 80, top = studioWide?VIEW_H*.85:56, bottom = studioWide?VIEW_H-35:BOARD.y-12, maxSize = studioWide?76:104, minSize = 44; // clear of the shorts top bar
   const width = (line, size) => { ctx.font = `${size}px ${TITLE_FONT}`; return ctx.measureText(line).width; };
   // One long line with spaces: break it near the middle rather than shrinking it to a whisper.
   if (lines.length === 1 && width(lines[0], maxSize) > maxW && lines[0].includes(' ')) {
@@ -2098,7 +2107,7 @@ function redrawStill() { // refresh the still preview after a setting that doesn
   if (plan) { renderFrame(plan.totalMs); drawFaceGuide(); } else renderFrame(0);
 }
 function drawSheet(t) {
-  ctx.drawImage(paperCanvas, 0, 0);
+  if(document.querySelector('#presentation').value!=='atelier'||!atelierPlates[VIEW_W>VIEW_H?'landscape':'portrait']||plan?.polaroid)ctx.drawImage(paperCanvas, 0, 0);
   if (!plan) return;
   advanceInk(t);
   if (plan.aiLayer) {
@@ -2246,6 +2255,10 @@ const letterInk = document.createElement('canvas'); letterInk.width=W; letterInk
 const letterCtx = letterInk.getContext('2d');
 letterCtx.strokeStyle=letterCtx.createPattern(graphite,'repeat'); letterCtx.lineCap='butt';
 const backgroundImages = new Map();
+const atelierPlates={};
+const atelierReady=Promise.all([['portrait','studio-portrait.png'],['landscape','studio-plate.png']].map(async([key,file])=>{const im=new Image();im.src='assets/atelier/'+file;await im.decode();atelierPlates[key]=im;})).then(()=>redrawStill()).catch(()=>{});
+function drawAtelierPlate(){if(document.querySelector('#presentation').value!=='atelier')return;const im=atelierPlates[VIEW_W>VIEW_H?'landscape':'portrait'];if(im)ctx.drawImage(im,0,0,VIEW_W,VIEW_H);}
+
 function configureLayout() {
   const landscape=document.querySelector('#orientation').value==='landscape';
   const letter=wrapLetter(messageInput.value.trim()).length>1;
@@ -2263,6 +2276,10 @@ function configureLayout() {
     board.w=board.pageW*board.s;board.h=board.pageH*board.s;
     board.x=(w-board.w)/2;board.y=150+(h-240-board.h)/2;
   }else{board.h=board.w*H/W;board.s=board.w/W;}
+  if(document.querySelector('#presentation').value==='atelier'&&!polaroidToggle.checked){
+    const area=landscape?{x:417/1536*w,y:64/1024*h,w:697/1536*w,h:732/1024*h}:{x:150/1024*w,y:240/1536*h,w:724/1024*w,h:952/1536*h};
+    board.s=Math.min((area.w-20)/board.pageW,(area.h-20)/board.pageH);board.w=board.pageW*board.s;board.h=board.pageH*board.s;board.x=area.x+(area.w-board.w)/2;board.y=area.y+(area.h-board.h)/2;
+  }
   const changed=VIEW_W!==w || VIEW_H!==h || BOARD.w!==board.w || BOARD.x!==board.x || BOARD.y!==board.y;
   VIEW_W=w; VIEW_H=h;
   if(canvas.width!==w || canvas.height!==h) {canvas.width=w;canvas.height=h;}
@@ -2373,7 +2390,7 @@ document.querySelector('#createArtwork').addEventListener('click',async()=>{
  if(!photos.length){status.textContent='사진을 먼저 추가해 주세요.';return;}
  stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);showBusy('선택한 사진을 분석하고 있습니다…');let failed=0;
  try{for(let i=0;i<photos.length;i++){const item=photos[i];showBusy(`${i+1}/${photos.length} · ${item.name}\n사진을 분석하고 그림을 만들고 있습니다`);await nextPaint();
- try{if(!item.analysis)item.analysis=await analyzePhoto(item.source);if(['ai','croquis'].includes(styleSelect.value))await ensureLineArt(item.analysis);applyPhotoWords(item);await ensureDrawingFonts();}catch(e){item.analysis=null;failed++;console.error(e);}}
+ try{if(!item.analysis)item.analysis=await analyzePhoto(item.source);if(['ai','croquis','graphite'].includes(styleSelect.value))await ensureLineArt(item.analysis);applyPhotoWords(item);await ensureDrawingFonts();}catch(e){item.analysis=null;failed++;console.error(e);}}
  restoreSelectedPhoto();if(!failed){rebuild();await prepareProject();renderFrame(plan.totalMs);}renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장을 만들지 못했습니다. 해당 사진을 삭제하거나 다시 만들기를 눌러 주세요.`:'완성했습니다. 사진별 문구를 수정하거나 영상과 사진으로 저장하세요.';
  }finally{hideBusy();setBusy(false);}
 });
@@ -2400,7 +2417,7 @@ async function prepareProject() {
   restoreSelectedPhoto();
 }
 async function ensureProjectLineArt() {
-  if(!['ai','croquis'].includes(styleSelect.value))return;
+  if(!['ai','croquis','graphite'].includes(styleSelect.value))return;
   for(const item of photos) if(item.analysis && !item.analysis.ai && !item.analysis.aiFailed) await ensureLineArt(item.analysis);
 }
 function projectDuration(){return projectSegments.length?projectSegments.length*Number(seconds.value)*1000:plan.totalMs;}
@@ -2434,7 +2451,7 @@ async function keepAwake(on) { // keep a phone's screen on while playing or reco
   } catch {}
 }
 async function play({ onDone, restore=true }) {
-  stopPlayback(); clearTimeout(messageTimer); setBusy(true); showBusy('미리보기를 준비하고 있습니다…'); await nextPaint(); await ensureDrawingFonts(); await ensureProjectLineArt(); await prepareProject(); resetInk(); hideBusy(); keepAwake(true);
+  stopPlayback(); clearTimeout(messageTimer); await atelierReady; setBusy(true); showBusy('미리보기를 준비하고 있습니다…'); await nextPaint(); await ensureDrawingFonts(); await ensureProjectLineArt(); await prepareProject(); resetInk(); hideBusy(); keepAwake(true);
   setBusy(true); preview.disabled=false;
   const useAudio = soundToggle.checked && sound.ensure();
   let clock;
@@ -2475,7 +2492,7 @@ function rebuild() {
   rememberPhoto(); updateProjectSummary();
   const faceAt = plan.faceEndMs ? ` 얼굴은 ${(plan.faceEndMs / 1000).toFixed(1)}초에 완성됩니다.` : '';
   const hands = analysis.marks?.hands?.length ?? 0, detailNote = analysis.marks?.mesh ? ` 이목구비${hands ? `와 손 ${hands}개` : ''}를 세밀하게 그립니다.` : '';
-  const aiNote = styleSelect.value === 'croquis' ? ' 윤곽과 해칭을 실제 연필 획으로 그립니다.' : styleSelect.value === 'faithful' ? ' 원본 사진의 명암과 얼굴 형태를 그대로 옮깁니다.' : styleSelect.value === 'ai' ? (plan.ai ? ' AI 선화로 그립니다.' : ' AI 선화를 불러오지 못해(인터넷 연결 확인) 기존 선 방식으로 그렸습니다.') : '';
+  const aiNote = styleSelect.value === 'graphite' ? ' 사진의 명암을 여러 겹의 실제 연필 획으로 쌓습니다.' : styleSelect.value === 'croquis' ? ' 윤곽과 해칭을 실제 연필 획으로 그립니다.' : styleSelect.value === 'faithful' ? ' 원본 사진의 명암과 얼굴 형태를 그대로 옮깁니다.' : styleSelect.value === 'ai' ? (plan.ai ? ' AI 선화로 그립니다.' : ' AI 선화를 불러오지 못해(인터넷 연결 확인) 기존 선 방식으로 그렸습니다.') : '';
   status.textContent = `${FACE_NOTE[analysis.face.source] ?? ''}${detailNote}${aiNote} ${plan.strokes.length.toLocaleString()}개의 연필 획으로 계획했습니다.${faceAt} 주황 점선이 얼굴 위치입니다. 틀리면 얼굴을 클릭하거나 얼굴 둘레를 드래그하세요.`;
 }
 function setBusy(busy) {
@@ -2552,7 +2569,7 @@ styleSelect.addEventListener('change', async () => {
   stopPlayback(); preview.textContent='미리보기';
   if(!analysis)return;
   setBusy(true);showBusy('그림 스타일을 적용해 미리보기를 다시 그리고 있습니다…');
-  try {await nextPaint();if(['ai','croquis'].includes(styleSelect.value))await ensureLineArt(analysis);rebuild();}
+  try {await nextPaint();if(['ai','croquis','graphite'].includes(styleSelect.value))await ensureLineArt(analysis);rebuild();}
   catch(error){console.error(error);status.textContent='그림을 다시 그리지 못했습니다. 다시 시도해 주세요.';}
   finally{hideBusy();setBusy(false);}
 });
@@ -2578,7 +2595,7 @@ darkness.addEventListener('input', () => {
 volume.addEventListener('input', () => { sound.setVolume(Number(volume.value)); });
 // Start fetching the models early so the first photo is quick.
 loadFaceDetector().catch(() => {}); loadSegmenter().catch(() => {}); loadLandmarkers().catch(() => {}); loadObjectSegmenter().catch(() => {});
-if (['ai', 'croquis'].includes(styleSelect.value)) loadLineArt().catch(() => {});
+if (['ai', 'croquis', 'graphite'].includes(styleSelect.value)) loadLineArt().catch(() => {});
 function scrollToCanvas() { // bring the whole canvas into view, with its top at the top of the screen
   // Wait a frame: the status line above the canvas changes length when playback starts, which moves the canvas.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector('.canvas-wrap')?.scrollIntoView({ behavior:'smooth', block:'start' })));
@@ -2720,7 +2737,7 @@ exportButton.addEventListener('click', async () => {
   const withAudio = soundToggle.checked, wanted = formatSelect.value, other = wanted === 'mp4' ? 'webm' : 'mp4';
   const token = session = {}; keepAwake(true); // `session` keeps still-preview redraws from touching the canvas mid-build
   try {
-    await ensureTitleFont(); // never put a first frame with fallback glyphs in the title
+    await atelierReady;await ensureTitleFont(); // never put a first frame with fallback glyphs in the title
     await ensureDrawingFonts(); await ensureProjectLineArt(); rebuild(); await prepareProject();
     if (handToggle?.checked) await DrawingHand.ready;
     let format = wanted, encoders = await pickEncoders(wanted, withAudio);
@@ -2784,7 +2801,7 @@ document.querySelector('#resetProject').addEventListener('click',()=>{
  titleInput.value='';messageInput.value='';signatureInput.value=DEFAULT_SIGNATURE;TITLE_FONT='"Nanum Pen Script", "Malgun Gothic", sans-serif';inkDarkness=Number(darkness.value)/100;sound.setVolume(Number(volume.value));document.querySelectorAll("#backgroundChoices button").forEach(b=>b.setAttribute("aria-pressed","false"));resetInk();configureLayout();renderFrame(0);renderQueue();updateProjectSummary();preview.textContent='미리보기';seekControl.value=1000;seekTime.textContent='완성 장면';compareButton.setAttribute('aria-pressed','false');hideBusy();setBusy(false);updateExportLabel();status.textContent='새 작업을 시작합니다. 사진을 추가한 뒤 만들기를 눌러 주세요.';document.querySelector('#stage').classList.remove('is-expanded');document.querySelector('#stage').style.removeProperty('--preview-width');document.querySelector('#expandCanvas').setAttribute('aria-pressed','false');document.querySelector('#expandCanvas').textContent='화면 폭으로 확대';window.scrollTo({top:0,behavior:'smooth'});
 });
 
-document.querySelector('#presentation').addEventListener('change', () => { stopPlayback(); preview.textContent = '미리보기'; document.querySelectorAll('#backgroundChoices button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.background===document.querySelector('#presentation').value))); redrawStill(); });
+document.querySelector('#presentation').addEventListener('change', () => { stopPlayback();configureLayout(); preview.textContent = '미리보기'; document.querySelectorAll('#backgroundChoices button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.background===document.querySelector('#presentation').value))); redrawStill(); });
 
 strength.disabled = styleSelect.value === "faithful";
 
