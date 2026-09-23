@@ -34,7 +34,7 @@ window.StudioGraphite=(()=>{
   const all=[];
   // Three passes use alternating directions and increasingly fine, dark marks.
   for(let pass=0;pass<3;pass++){
-   const list=[],step=pass===0?3.8:pass===1?3.4:3.0;
+   const list=[],step=pass===0?2.2:pass===1?2.0:1.8;
    for(let y=2;y<h-2;y+=step)for(let x=2;x<w-2;x+=step){
     const px=x+(rnd()-.5)*step,py=y+(rnd()-.5)*step,d=sample(px,py);
     const threshold=pass===0?.015:pass===1?.14:.40;
@@ -49,8 +49,8 @@ window.StudioGraphite=(()=>{
     }else if(region===2)theta=(A.coh[idx]>.18?A.ang[idx]:-.3+nx*.65);
     else theta=A.coh[idx]>.22?A.ang[idx]:(nx<0?.8:-.8);
     theta+=(pass===1?.65:pass===2?-.45:0)+(rnd()-.5)*.16;
-    const length=(pass===0?18:pass===1?14:10)*(1-detail*.45)*(.7+rnd()*.6);
-    // Stop both ends at the actual subject / face / hair boundary.
+    const length=(pass===0?5:pass===1?4.5:4)*(1-detail*.15)*(.85+rnd()*.3);
+    // Tiny graphite touches: never use long diagonal shading strokes.
     const reach=sign=>{let last=0;for(let d=1;d<=length/2;d+=.75){const qx=px+Math.cos(theta)*d*sign,qy=py+Math.sin(theta)*d*sign;const other=regionAt(qx,qy);if(!other||(other!==region&&Math.abs(sample(qx,qy)-sample(px,py))>.12))break;last=d;}return last;};
     const left=reach(-1),right=reach(1);if(left+right<2)continue;
     const dx=Math.cos(theta),dy=Math.sin(theta);
@@ -92,7 +92,7 @@ window.StudioGraphite=(()=>{
   // Revisit a small neighbourhood with faint graphite before moving onward.
   // Neighbourhoods schedule strokes only; they never clip ink into shapes.
   const groups=new Map();
-  for(const s of list){const x=s.x[1],y=s.y[1],u=x+7*Math.sin(y*.06),v=y+7*Math.sin(x*.07),key=Math.floor(u/32)+':'+Math.floor(v/32);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(s);}
+  for(const s of list){const x=s.x[1],y=s.y[1],u=x+2*Math.sin(y*.06),v=y+2*Math.sin(x*.07),key=Math.floor(u/10)+':'+Math.floor(v/10);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(s);}
   const patches=[...groups.values()],out=[];let at={x:A.b.x+A.face.x,y:A.b.y+A.face.y};
   while(patches.length){let best=0,distance=Infinity;for(let i=0;i<patches.length;i++){const s=patches[i][0],d=Math.hypot(s.x[1]-at.x,s.y[1]-at.y);if(d<distance){distance=d;best=i;}}
    const patch=patches.splice(best,1)[0],ordered=nearest(patch,at);

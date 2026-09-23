@@ -696,7 +696,7 @@ let drawingEnginePromise=null;
 async function ensureDrawingEngine(){
  if(styleSelect.value!=='graphite'||window.StudioGraphite?.build)return;
  if(!drawingEnginePromise)drawingEnginePromise=(async()=>{
-  try{await withTimeout(loadScript('studio-graphite.js?v=20260924-layer2&retry='+Date.now()),15000);
+  try{await withTimeout(loadScript('studio-graphite.js?v=20260924-short3&retry='+Date.now()),15000);
    if(!window.StudioGraphite?.build)throw Error('missing drawing engine');
   }catch{throw Error('그리기 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하고 만들기를 다시 눌러 주세요. 사진은 그대로 유지됩니다.');}
  })().finally(()=>{drawingEnginePromise=null;});
