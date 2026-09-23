@@ -110,40 +110,10 @@ window.StudioGraphite=(()=>{
   return out;
  }
  function build(A,base,density=40){
-  const original=marks(A).map(s=>({...s,alpha:s.alpha*(.8+density/200)})),writing=base.strokes.filter(s=>s.message||s.kind==='sign'||s.kind==='dot');
-  const contours=original.filter(s=>s.kind==='contour'),shading=original.filter(s=>s.kind!=='contour');
-  const feature=s=>(s.eye||0)>.12||(s.zones||[]).some((v,i)=>[0,1,2,3,4].includes(i)&&v>.25);
-  const gestures=contours.filter(s=>!feature(s)&&s.len>20).sort((a,b)=>b.len-a.len).slice(0,18),used=new Set(gestures);
-  const details=contours.filter(s=>!used.has(s)&&feature(s));details.forEach(s=>used.add(s));
-  const rest=contours.filter(s=>!used.has(s));
-  const accents=rest.filter(s=>s.len<18&&(s.strength||0)>.45);const finishing=new Set(accents);
-  const phases=[
-   {name:'형태 잡기',weight:.06,list:gestures},
-   {name:'이목구비 그리기',weight:.10,list:details},
-   {name:'머리카락과 옷의 선',weight:.09,list:rest.filter(s=>!finishing.has(s))},
-   {name:'연필로 명암 칠하기',weight:.72,list:localShading(shading,A),ordered:true},
-   {name:'마지막 세부 묘사',weight:.03,list:accents}
-  ].filter(p=>p.list.length);
-  const lead=(base.intro?base.intro.hold+base.intro.fade:0)+650,duration=Math.max(120000-(base.totalMs-base.drawEndMs)-lead,base.drawEndMs-lead),weight=phases.reduce((n,p)=>n+p.weight,0);
-  let at=base.entry,start=lead;const drawing=[],chapters=[];
-  for(const phase of phases){
-   const list=phase.ordered?phase.list:nearest(phase.list,at);let raw=0;
-   for(let i=0;i<list.length;i++){
-    const s=list[i],gap=Math.hypot(s.x[0]-at.x,s.y[0]-at.y),speed=1.5;
-    s.tLift=raw;raw+=phase.ordered?25+gap*2:24+Math.min(280,gap*1.3);
-    const motion=prepareStrokeMotion(s,i);
-    s.tDown=raw;raw+=phase.ordered?Math.max(100,s.len/180*1000)*(1+.12*Math.sin(i*2.399)):motion/speed+25;s.tUp=raw;
-    s.chapter=phase.name;at={x:s.x[s.n-1],y:s.y[s.n-1]};
-   }
-   const requested=duration*phase.weight/weight;
-   const span=requested,scale=span/Math.max(1,raw);
-   for(const s of list){s.tLift=start+s.tLift*scale;s.tDown=start+s.tDown*scale;s.tUp=start+s.tUp*scale;}
-   chapters.push({name:phase.name,start,end:start+span,count:list.length});for(const s of list)drawing.push(s);start+=span;
-  }
-  const extension=Math.max(0,start-base.drawEndMs);
-  for(const s of writing){s.tLift+=extension;s.tDown+=extension;s.tUp+=extension;}
-  const talk=base.talk?{...base.talk,start:base.talk.start+extension,end:base.talk.end+extension,blinkAt:base.talk.blinkAt+extension,beats:base.talk.beats.map(b=>({...b,start:b.start+extension,end:b.end+extension}))}:null;
-  return {...base,totalMs:base.totalMs+extension,drawEndMs:start,talk,requestedMs:base.totalMs,strokes:[...drawing,...writing],chapters,ai:false,aiLayer:null,faithful:false,croquis:true,studio:true,faceEndMs:0,audio:buildAudioEvents([...drawing,...writing])};
+  // Present the finished artwork immediately; there is no drawing timeline.
+  const strokes=[...marks(A).map(s=>({...s,alpha:s.alpha*(.8+density/200)})),...base.strokes.filter(s=>s.message||s.kind==='sign'||s.kind==='dot')].map(s=>({...s,tLift:-3,tDown:-2,tUp:-1}));
+  return {...base,strokes,totalMs:base.totalMs,drawEndMs:0,instant:true,intro:null,talk:null,chapters:[],audio:[],ai:false,aiLayer:null,faithful:false,croquis:true,studio:true,faceEndMs:0};
  }
+
  return {marks,build,regions};
 })();

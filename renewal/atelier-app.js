@@ -696,7 +696,7 @@ let drawingEnginePromise=null;
 async function ensureDrawingEngine(){
  if(styleSelect.value!=='graphite'||window.StudioGraphite?.build)return;
  if(!drawingEnginePromise)drawingEnginePromise=(async()=>{
-  try{await withTimeout(loadScript('studio-graphite.js?v=20260924-short3&retry='+Date.now()),15000);
+  try{await withTimeout(loadScript('studio-graphite.js?v=20260924-instant1&retry='+Date.now()),15000);
    if(!window.StudioGraphite?.build)throw Error('missing drawing engine');
   }catch{throw Error('그리기 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하고 만들기를 다시 눌러 주세요. 사진은 그대로 유지됩니다.');}
  })().finally(()=>{drawingEnginePromise=null;});
@@ -1980,6 +1980,7 @@ function strokeProgress(s, t) {
   return lo+clamp((progress-times[lo])/Math.max(1e-12,times[hi]-times[lo]));
 }
 function advanceInk(t) {
+  if(plan.instant && cursor.stroke===plan.strokes.length){cursor.time=t;return;}
   if (t < cursor.time || (t >= plan.totalMs && cursor.time !== t)) resetInk();
   cursor.time = t;
   const list = plan.strokes; let drew = false;
@@ -2002,6 +2003,7 @@ function advanceInk(t) {
 }
 const ease = u => .5 - .5 * Math.cos(Math.PI * clamp(u));
 function pencilAt(t) {
+  if(plan?.instant)return null;
   const list = plan.strokes;
   if (!list.length) return null;
   const s = list[Math.min(cursor.stroke, list.length - 1)];
@@ -2373,7 +2375,7 @@ function updateProjectSummary() {
   fileName.textContent=photos.length?`${photos.length}장 선택됨 · 사진 추가하기`:"JPG · PNG · WEBP";
   const count=photos.length || (analysis?1:0), requested=count*Number(seconds.value);
   const duration=Math.ceil(photos.length?photos.reduce((sum,p)=>sum+(p.plan?.totalMs||Number(seconds.value)*1000),0)/1000:(plan?.totalMs||requested*1000)/1000);
-  document.querySelector('#projectSummary').textContent=count?`${count}장 · 총 ${Math.floor(duration/60)}분 ${duration%60}초${duration>requested?' · 아틀리에 연필화는 최소 2분으로 제작합니다.':' · 선택한 사진의 완성 장면을 미리 봅니다.'}`:'';
+  document.querySelector('#projectSummary').textContent=count?`${count}장 · 총 ${Math.floor(duration/60)}분 ${duration%60}초${duration>requested?' · 완성 그림을 표시합니다.':' · 선택한 사진의 완성 장면을 미리 봅니다.'}`:'';
   const lines=wrapLetter(messageInput.value.trim()).length, recommended=Math.min(600,Math.max(30,Math.ceil([...messageInput.value].length*.45+20)));
   document.querySelector('#messageHelp').textContent=`최대 4,000자 · 현재 ${lines}줄 (긴 줄은 자동 줄바꿈). ${lines>1?'그림 위에 직접 씁니다. ':''}${lines>16?'16줄을 넘으면 글씨가 작아집니다. ':''}${lines>1?`여유 있는 손글씨를 위해 한 장당 ${recommended}초 이상을 권합니다. `:''}선택한 사진에만 적용됩니다.`;
 }

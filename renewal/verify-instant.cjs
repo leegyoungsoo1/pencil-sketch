@@ -1,0 +1,9 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+module.exports=async({chromium,server,root})=>{
+ const out=path.join(root,'.test-output/layers');fs.mkdirSync(out,{recursive:true});await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true,channel:'msedge'});
+ try{
+ const page=await browser.newPage({viewport:{width:1400,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(`http://127.0.0.1:${server.address().port}/atelier.html`);
+ await page.locator('.settings summary').click();await page.selectOption('#framing','closeup');await page.setInputFiles('#photo',process.env.SKETCH_TEST_IMAGE||path.join(process.env.USERPROFILE,'Desktop','ai테스트','임영웅1.jpg'));await page.waitForFunction(()=>photos.length&&!photoInput.disabled);await page.click('#createArtwork');await page.waitForFunction(()=>plan&&!photoInput.disabled,null,{timeout:240000});await page.evaluate(async()=>{await atelierReady;await DrawingHand.ready;});
+ const result=await page.evaluate(()=>{resetInk();renderFrame(0);const first=ctx.getImageData(0,0,VIEW_W,VIEW_H).data;const count=cursor.stroke;renderFrame(plan.totalMs/2);const middle=ctx.getImageData(0,0,VIEW_W,VIEW_H).data;renderFrame(plan.totalMs);return {instant:plan.instant,same:count===plan.strokes.length,delta:first.reduce((sum,v,i)=>sum+Math.abs(v-middle[i]),0)/first.length,pen:pencilAt(0),audio:plan.audio.length,total:plan.totalMs,marks:plan.strokes.length};});console.log(result);assert(result.instant&&result.same);assert(result.delta<1);assert.equal(result.pen,null);assert.equal(result.audio,0);assert(result.total<120000);assert(result.marks>10000);assert.deepEqual(errors,[]);console.log('PASS: completed artwork visible from first frame, no hand or pencil sound');
+ }finally{await browser.close();server.close();}
+};
