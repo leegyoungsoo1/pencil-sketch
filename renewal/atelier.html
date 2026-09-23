@@ -110,8 +110,9 @@
         <legend>그림</legend>
         <div class="field">
           <label for="framing">사진 구도</label>
-          <select id="framing"><option value="closeup">얼굴 정밀 확대 · 초상화</option><option value="original">원본 전체 · 손과 소품 보존</option><option value="face" selected>얼굴 중심 세로 확대</option></select>
-          <p class="help">얼굴 정밀 확대는 얼굴과 어깨를 크게 담습니다. 원본 전체는 사진 비율을 유지합니다. 얼굴 확대는 손이나 소품을 자를 수 있습니다.</p>
+          <select id="framing"><option value="scene">풍경 중심 · 배경까지 전체 그리기</option>
+            <option value="closeup">얼굴 정밀 확대 · 초상화</option><option value="original">원본 전체 · 손과 소품 보존</option><option value="face" selected>얼굴 중심 · 세로 확대</option></select>
+          <p class="help">풍경 중심은 사진 전체와 배경까지 그립니다. 얼굴 중심은 인물을 우선하며, 얼굴 확대는 손이나 소품을 자를 수 있습니다.</p>
         </div>
         <div class="field">
           <label for="style">그림 스타일</label>
@@ -121,7 +122,7 @@
             <option value="line">선만 (크로키)</option>
             <option value="shade">선 + 그림자 살짝</option>
           </select>
-          <p class="help">얼굴 윤곽 안에서 볼·코의 굴곡을 따라 칠하고, 머리카락과 옷은 다른 방향의 획으로 채웁니다. 기본 완성 시간은 2분입니다.</p>
+          <p class="help">작은 부위를 옅게 네 번 반복해 칠하면서 명암을 쌓습니다. 얼굴 중심과 풍경 중심을 구도에서 선택할 수 있습니다. 기본 완성 시간은 2분입니다.</p>
         </div>
         <div class="field slider">
           <label for="darkness">선 진하기</label>
@@ -171,10 +172,10 @@
   </div>
 
 
-  <script src="portrait.js?v=20260923-engine1"></script>
-  <script src="hand-motion.js?v=20260923-engine1"></script>
-  <script src="studio-graphite.js?v=20260923-engine1"></script>
-  <script src="atelier-app.js?v=20260923-engine1"></script>
-  <script src="atelier.js?v=20260923-engine1"></script>
+  <script src="portrait.js?v=20260924-layer2"></script>
+  <script src="hand-motion.js?v=20260924-layer2"></script>
+  <script src="studio-graphite.js?v=20260924-layer2"></script>
+  <script src="atelier-app.js?v=20260924-layer2"></script>
+  <script src="atelier.js?v=20260924-layer2"></script>
 </body>
 </html>

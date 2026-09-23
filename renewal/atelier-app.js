@@ -80,7 +80,7 @@ function random(seed) { // mulberry32: the same photo always produces the same d
   return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
 function fitRect(w, h) {
-  const margin=document.querySelector('#framing')?.value==='original'?12:PAD;
+  const margin=['original','scene'].includes(document.querySelector('#framing')?.value)?12:PAD;
   const maxW = W - margin * 2, maxH = H - margin * 2, scale = Math.min(maxW / w, maxH / h);
   const fw = Math.round(w * scale), fh = Math.round(h * scale);
   return { x:Math.round((W - fw) / 2), y:Math.round((H - fh) / 2), w:fw, h:fh };
@@ -400,6 +400,7 @@ async function analyzePhoto(img) {
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), centre = ids => centroid(ids.map(i => mesh[i]));
     face = { ...face, x:(x0 + x1) / 2, y:(y0 + y1) / 2, rx:(x1 - x0) / 2 * 1.02, ry:(y1 - y0) / 2 * 1.04, eyes:[centre(base.marks.parts.irisL), centre(base.marks.parts.irisR)] };
   }
+  base.scene=framing==='scene';
   return analyzeFace(base, face);
 }
 function analyzeFace(base, face) { // everything that depends on where the face is; re-run when the user corrects it
@@ -446,6 +447,7 @@ function analyzeFace(base, face) { // everything that depends on where the face 
       const top = face.y + face.ry * .7, halfWidth = face.rx * (1.1 + Math.max(0, y - top) / face.ry * 1.6);
       subject[i] = Math.max(headShape, y > top ? clamp(1 - (Math.abs(x - face.x) - halfWidth) / (face.rx * .4)) : 0);
     }
+    if(base.scene){subject[i]=1;far[i]=0;detail[i]=.65;head[i]=0;}
     if (d < .8 && !(x & 1) && !(y & 1)) core.push(soft[i]);
   }
   core.sort((a, z) => a - z);
@@ -694,7 +696,7 @@ let drawingEnginePromise=null;
 async function ensureDrawingEngine(){
  if(styleSelect.value!=='graphite'||window.StudioGraphite?.build)return;
  if(!drawingEnginePromise)drawingEnginePromise=(async()=>{
-  try{await withTimeout(loadScript('studio-graphite.js?v=20260923-engine1&retry='+Date.now()),15000);
+  try{await withTimeout(loadScript('studio-graphite.js?v=20260924-layer2&retry='+Date.now()),15000);
    if(!window.StudioGraphite?.build)throw Error('missing drawing engine');
   }catch{throw Error('그리기 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하고 만들기를 다시 눌러 주세요. 사진은 그대로 유지됩니다.');}
  })().finally(()=>{drawingEnginePromise=null;});
@@ -831,7 +833,7 @@ function traceLineArt(A) {
   // What to draw: people, animals and objects. Bare backgrounds stay paper. The face only vouches for its own core —
   // its soft falloff reaches past the jaw, and let background lettering beside the cheek slip in.
   const keepRaw = new Float32Array(n);
-  for (let i = 0; i < n; i++) keepRaw[i] = person || objects ? Math.max(person?.[i] ?? 0, objects?.[i] ?? 0, clamp((faceW[i] - .9) * 10), clamp(handW[i] * 1.5)) : 1;
+  for (let i = 0; i < n; i++) keepRaw[i] = A.scene ? 1 : person || objects ? Math.max(person?.[i] ?? 0, objects?.[i] ?? 0, clamp((faceW[i] - .9) * 10), clamp(handW[i] * 1.5)) : 1;
   const keep = blur(keepRaw, gw, gh, 4);
   // The model draws most lines mid-grey, so thresholds are relative to its own darkest lines in this photo.
   const inkSample = []; for (let i = 0; i < n; i += 2) if (keep[i] > .3 && lineMap[i] > .05) inkSample.push(lineMap[i]);
@@ -1905,7 +1907,7 @@ function buildPlan(A, durationSec, densityPercent, style = 'shade', signature = 
     }
   }
   if (signature) strokes.push(...signatureStrokes(signature, finaleMs, random(4321), pace, frame, !!glyphs?.letter));
-  if(document.querySelector('#framing').value==='original'&&!frame){
+  if(['original','scene'].includes(document.querySelector('#framing').value)&&!frame){
     const writing=strokes.filter(st=>st.message||st.kind==='sign'||st.kind==='dot');
     if(writing.length){
       let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
@@ -2294,7 +2296,7 @@ function configureLayout() {
   if(landscape) board={w:660,x:630,y:160};
   else board={w:980,x:50,y:Math.round((h-980*H/W)*.42)};
   board.pageX=0;board.pageY=0;board.pageW=W;board.pageH=H;
-  if(analysis && document.querySelector('#framing').value==='original' && !polaroidToggle.checked){
+  if(analysis && ['original','scene'].includes(document.querySelector('#framing').value) && !polaroidToggle.checked){
     const b=analysis.b;
     board.pageX=Math.max(0,b.x-12);board.pageY=Math.max(0,b.y-12);
     board.pageW=Math.min(W-board.pageX,b.w+24);board.pageH=Math.min(H-board.pageY,b.h+24);
