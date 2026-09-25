@@ -696,7 +696,7 @@ let drawingEnginePromise=null;
 async function ensureDrawingEngine(){
  if(styleSelect.value!=='graphite'||window.StudioGraphite?.build)return;
  if(!drawingEnginePromise)drawingEnginePromise=(async()=>{
-  try{await withTimeout(loadScript('studio-graphite.js?v=20260925-magic2&retry='+Date.now()),15000);
+  try{await withTimeout(loadScript('studio-graphite.js?v=20260925-brush1&retry='+Date.now()),15000);
    if(!window.StudioGraphite?.build)throw Error('missing drawing engine');
   }catch{throw Error('그리기 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하고 만들기를 다시 눌러 주세요. 사진은 그대로 유지됩니다.');}
  })().finally(()=>{drawingEnginePromise=null;});
@@ -2058,6 +2058,7 @@ function renderFrame(t) {
   drawTalk(t);
   drawPolaroid(t);
   ctx.save();if(plan?.instant)ctx.globalAlpha*=magicProgress(t);drawLetter();ctx.restore();
+  if(plan?.instant)onSheet(()=>drawMagicBrush(t));
   const pen = plan ? pencilAt(t) : null;
   const hand = pen && handToggle?.checked && DrawingHand.draw(ctx,pen,penView(t,pen),BOARD,t,handMotionToggle.checked);
   drawTitle();
@@ -2143,6 +2144,29 @@ function drawSheet(t) {
 }
 function magicDuration(){return Math.max(1,(plan?.totalMs||20000)*.9);}
 function magicProgress(t){const u=clamp(t/magicDuration());return u*u*(3-2*u);}
+function magicBrushPose(t){
+ if(t<=0||t>=magicDuration())return null;
+ const u=t/magicDuration(),a=u*Math.PI*6;
+ const x=(BOARD.pageX||0)+(BOARD.pageW||W)*(.5+.31*Math.sin(a)*Math.sin(.5+u*2));
+ const y=(BOARD.pageY||0)+(BOARD.pageH||H)*(.18+.64*u+.075*Math.sin(a*1.7));
+ return {x,y,angle:-.65+.22*Math.sin(a+.6),alpha:Math.min(1,t/450,(magicDuration()-t)/750)};
+}
+function drawMagicBrush(t){
+ const p=magicBrushPose(t);if(!p)return;
+ ctx.save();
+ // A short luminous wake follows the moving tip; it never deposits graphite.
+ for(let i=22;i>=0;i--){const q=magicBrushPose(t-i*18);if(!q)continue;const r=3+(1-i/23)*8;
+  ctx.globalAlpha=p.alpha*(1-i/23)*.55;const glow=ctx.createRadialGradient(q.x,q.y,0,q.x,q.y,r*2);
+  glow.addColorStop(0,'#fff9d9');glow.addColorStop(.3,'#f7cf75');glow.addColorStop(1,'rgba(255,209,115,0)');ctx.fillStyle=glow;ctx.fillRect(q.x-r*2,q.y-r*2,r*4,r*4);
+ }
+ ctx.globalAlpha=p.alpha;ctx.translate(p.x,p.y);ctx.rotate(p.angle);
+ ctx.shadowColor='rgba(48,28,12,.24)';ctx.shadowBlur=6;ctx.shadowOffsetX=3;ctx.shadowOffsetY=5;
+ const wood=ctx.createLinearGradient(0,-150,10,-150);wood.addColorStop(0,'#253e3b');wood.addColorStop(.45,'#719084');wood.addColorStop(1,'#182c29');ctx.fillStyle=wood;
+ ctx.beginPath();ctx.moveTo(-6,-39);ctx.lineTo(-4,-153);ctx.quadraticCurveTo(0,-170,4,-153);ctx.lineTo(7,-39);ctx.closePath();ctx.fill();
+ ctx.shadowColor='transparent';const metal=ctx.createLinearGradient(-7,0,8,0);metal.addColorStop(0,'#826443');metal.addColorStop(.4,'#f5d8a0');metal.addColorStop(.65,'#fff1cb');metal.addColorStop(1,'#977449');ctx.fillStyle=metal;ctx.fillRect(-7,-48,15,22);
+ ctx.fillStyle='#70503b';ctx.beginPath();ctx.moveTo(-7,-27);ctx.quadraticCurveTo(-9,-10,0,1);ctx.quadraticCurveTo(11,-9,8,-27);ctx.closePath();ctx.fill();
+ ctx.strokeStyle='#bb9770';ctx.lineWidth=.8;for(let i=-4;i<=5;i+=3){ctx.beginPath();ctx.moveTo(i,-25);ctx.quadraticCurveTo(i*.7,-9,0,0);ctx.stroke();}ctx.restore();
+}
 function drawMagicDust(t){
  if(t<=0||t>=magicDuration())return;
  const u=t/magicDuration(),motion=t/2600,envelope=Math.min(1,t/600,(magicDuration()-t)/900),rnd=random(73941);
