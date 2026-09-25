@@ -696,7 +696,7 @@ let drawingEnginePromise=null;
 async function ensureDrawingEngine(){
  if(styleSelect.value!=='graphite'||window.StudioGraphite?.build)return;
  if(!drawingEnginePromise)drawingEnginePromise=(async()=>{
-  try{await withTimeout(loadScript('studio-graphite.js?v=20260925-magic1&retry='+Date.now()),15000);
+  try{await withTimeout(loadScript('studio-graphite.js?v=20260925-magic2&retry='+Date.now()),15000);
    if(!window.StudioGraphite?.build)throw Error('missing drawing engine');
   }catch{throw Error('그리기 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하고 만들기를 다시 눌러 주세요. 사진은 그대로 유지됩니다.');}
  })().finally(()=>{drawingEnginePromise=null;});
@@ -2141,16 +2141,17 @@ function drawSheet(t) {
   ctx.drawImage(ink, 0, 0);ctx.restore();
   if(plan.instant)drawMagicDust(t);
 }
-function magicProgress(t){const u=clamp(t/2200);return u*u*(3-2*u);}
+function magicDuration(){return Math.max(1,(plan?.totalMs||20000)*.9);}
+function magicProgress(t){const u=clamp(t/magicDuration());return u*u*(3-2*u);}
 function drawMagicDust(t){
- if(t<=0||t>=2600)return;
- const u=t/2600,envelope=Math.sin(Math.PI*u),rnd=random(73941);
+ if(t<=0||t>=magicDuration())return;
+ const u=t/magicDuration(),motion=t/2600,envelope=Math.min(1,t/600,(magicDuration()-t)/900),rnd=random(73941);
  ctx.save();ctx.globalCompositeOperation='screen';
  for(let i=0;i<100;i++){
   const x0=(BOARD.pageX||0)+rnd()*(BOARD.pageW||W),y0=(BOARD.pageY||0)+rnd()*(BOARD.pageH||H);
   const phase=rnd()*Math.PI*2,size=1+rnd()*3;
-  const x=x0+Math.sin(u*5+phase)*14,y=y0-u*(25+rnd()*35);
-  const alpha=envelope*(.25+.75*Math.pow(Math.sin(u*9+phase),2));
+  const x=x0+Math.sin(motion*5+phase)*14,y=y0-Math.sin(motion*.6+phase)*(15+rnd()*20);
+  const alpha=envelope*(.25+.75*Math.pow(Math.sin(motion*9+phase),2));
   ctx.globalAlpha=alpha;const glow=ctx.createRadialGradient(x,y,0,x,y,size*5);
   glow.addColorStop(0,'#fffbea');glow.addColorStop(.25,'#ffe2a3');glow.addColorStop(1,'rgba(255,211,130,0)');
   ctx.fillStyle=glow;ctx.fillRect(x-size*5,y-size*5,size*10,size*10);
@@ -2501,7 +2502,7 @@ loadBackgrounds();
 function stopPlayback() { const wasPlaying=!!raf; cancelAnimationFrame(raf); raf=0; sound.silence(); session = null; keepAwake(false); if(wasPlaying){restoreSelectedPhoto();setBusy(false);} }
 function playMagicCompletion(){
  stopPlayback();scrollToCanvas();resetInk();setBusy(true);const token=session={},start=performance.now();
- const tick=()=>{if(session!==token)return;const t=performance.now()-start;renderFrame(t);if(t<2600)raf=requestAnimationFrame(tick);else{raf=0;session=null;setBusy(false);renderFrame(plan.totalMs);}};
+ const tick=()=>{if(session!==token)return;const t=performance.now()-start;renderFrame(Math.min(1,t/2600)*plan.totalMs);if(t<2600)raf=requestAnimationFrame(tick);else{raf=0;session=null;setBusy(false);renderFrame(plan.totalMs);}};
  raf=requestAnimationFrame(tick);
 }
 let wakeLock = null;
