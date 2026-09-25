@@ -696,7 +696,7 @@ let drawingEnginePromise=null;
 async function ensureDrawingEngine(){
  if(styleSelect.value!=='graphite'||window.StudioGraphite?.build)return;
  if(!drawingEnginePromise)drawingEnginePromise=(async()=>{
-  try{await withTimeout(loadScript('studio-graphite.js?v=20260924-instant1&retry='+Date.now()),15000);
+  try{await withTimeout(loadScript('studio-graphite.js?v=20260925-magic1&retry='+Date.now()),15000);
    if(!window.StudioGraphite?.build)throw Error('missing drawing engine');
   }catch{throw Error('그리기 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하고 만들기를 다시 눌러 주세요. 사진은 그대로 유지됩니다.');}
  })().finally(()=>{drawingEnginePromise=null;});
@@ -2057,7 +2057,7 @@ function renderFrame(t) {
   } else onSheet(() => { ctx.beginPath(); ctx.rect(BOARD.pageX||0, BOARD.pageY||0, BOARD.pageW||W, BOARD.pageH||H); ctx.clip(); drawSheet(t); });
   drawTalk(t);
   drawPolaroid(t);
-  drawLetter();
+  ctx.save();if(plan?.instant)ctx.globalAlpha*=magicProgress(t);drawLetter();ctx.restore();
   const pen = plan ? pencilAt(t) : null;
   const hand = pen && handToggle?.checked && DrawingHand.draw(ctx,pen,penView(t,pen),BOARD,t,handMotionToggle.checked);
   drawTitle();
@@ -2136,7 +2136,27 @@ function drawSheet(t) {
     aiFrameCtx.globalCompositeOperation = 'source-over';
     ctx.drawImage(aiFrame, 0, 0, W, H);
   }
-  ctx.drawImage(ink, 0, 0);
+  ctx.save();
+  if(plan.instant)ctx.globalAlpha*=magicProgress(t);
+  ctx.drawImage(ink, 0, 0);ctx.restore();
+  if(plan.instant)drawMagicDust(t);
+}
+function magicProgress(t){const u=clamp(t/2200);return u*u*(3-2*u);}
+function drawMagicDust(t){
+ if(t<=0||t>=2600)return;
+ const u=t/2600,envelope=Math.sin(Math.PI*u),rnd=random(73941);
+ ctx.save();ctx.globalCompositeOperation='screen';
+ for(let i=0;i<100;i++){
+  const x0=(BOARD.pageX||0)+rnd()*(BOARD.pageW||W),y0=(BOARD.pageY||0)+rnd()*(BOARD.pageH||H);
+  const phase=rnd()*Math.PI*2,size=1+rnd()*3;
+  const x=x0+Math.sin(u*5+phase)*14,y=y0-u*(25+rnd()*35);
+  const alpha=envelope*(.25+.75*Math.pow(Math.sin(u*9+phase),2));
+  ctx.globalAlpha=alpha;const glow=ctx.createRadialGradient(x,y,0,x,y,size*5);
+  glow.addColorStop(0,'#fffbea');glow.addColorStop(.25,'#ffe2a3');glow.addColorStop(1,'rgba(255,211,130,0)');
+  ctx.fillStyle=glow;ctx.fillRect(x-size*5,y-size*5,size*10,size*10);
+  if(i%5===0){ctx.strokeStyle='#fffbed';ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(x-size*2,y);ctx.lineTo(x+size*2,y);ctx.moveTo(x,y-size*2);ctx.lineTo(x,y+size*2);ctx.stroke();}
+ }
+ ctx.restore();
 }
 function drawPolaroid(t) {
   // The reference photo as a polaroid taped to the canvas at a slight angle; it lifts away and fades before drawing starts.
@@ -2425,7 +2445,7 @@ document.querySelector('#createArtwork').addEventListener('click',async()=>{
  try{if(!item.analysis)item.analysis=await analyzePhoto(item.source);if(['ai','croquis','graphite'].includes(styleSelect.value))await ensureLineArt(item.analysis);applyPhotoWords(item);await ensureDrawingFonts();}catch(e){item.analysis=null;failed++;console.error(e);}}
  restoreSelectedPhoto();if(!failed){rebuild();await prepareProject();renderFrame(plan.totalMs);}renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장을 만들지 못했습니다. 해당 사진을 삭제하거나 다시 만들기를 눌러 주세요.`:'완성했습니다. 사진별 문구를 수정하거나 영상과 사진으로 저장하세요.';
  }catch(error){console.error(error);status.textContent=error.message||'그림을 만들지 못했습니다. 만들기를 다시 눌러 주세요.';failureMessage=status.textContent;
- }finally{hideBusy();setBusy(false);if(failureMessage){const notice=document.querySelector('#processingNotice');notice.textContent=failureMessage;notice.hidden=false;}}
+ }finally{hideBusy();setBusy(false);if(failureMessage){const notice=document.querySelector('#processingNotice');notice.textContent=failureMessage;notice.hidden=false;}else if(!failed&&plan?.instant)playMagicCompletion();}
 });
 document.querySelector('#wordsPhoto').addEventListener('change',event=>{clearTimeout(messageTimer);stopPlayback();savePhotoWords();restoreSelectedPhoto(Number(event.target.value));rebuild();renderFrame(plan?.totalMs||0);renderQueue();updateProjectSummary();});
 for(const input of [titleInput,messageInput,signatureInput])input.addEventListener('input',savePhotoWords);
@@ -2479,6 +2499,11 @@ loadBackgrounds();
 
 // ───────────────────────── playback, export & UI ─────────────────────────
 function stopPlayback() { const wasPlaying=!!raf; cancelAnimationFrame(raf); raf=0; sound.silence(); session = null; keepAwake(false); if(wasPlaying){restoreSelectedPhoto();setBusy(false);} }
+function playMagicCompletion(){
+ stopPlayback();scrollToCanvas();resetInk();setBusy(true);const token=session={},start=performance.now();
+ const tick=()=>{if(session!==token)return;const t=performance.now()-start;renderFrame(t);if(t<2600)raf=requestAnimationFrame(tick);else{raf=0;session=null;setBusy(false);renderFrame(plan.totalMs);}};
+ raf=requestAnimationFrame(tick);
+}
 let wakeLock = null;
 async function keepAwake(on) { // keep a phone's screen on while playing or recording — a sleeping screen stops the recording
   try {
@@ -2641,7 +2666,7 @@ preview.addEventListener('click', async () => {
   if (!projectReady() || !plan) return;
   scrollToCanvas();
   if (session) { stopPlayback(); preview.textContent = '미리보기'; renderFrame(plan.totalMs); return; }
-  preview.textContent = '정지'; status.textContent = '연필로 한 획씩 스케치하고 있습니다…';
+  preview.textContent = '정지'; status.textContent = plan.instant?'빛가루와 함께 그림이 완성됩니다…':'연필로 한 획씩 스케치하고 있습니다…';
   try{await play({ onDone:() => { preview.textContent = '미리보기'; status.textContent = '연필 스케치가 완성되었습니다.'; } });}catch(error){stopPlayback();hideBusy();setBusy(false);preview.textContent='미리보기';status.textContent=`미리보기를 준비하지 못했습니다. 만들기 버튼으로 다시 시도해 주세요. (${error.message})`;}
 });
 // Recording formats, best first. MP4 (H.264 + AAC) opens almost everywhere; WebM is the long-standing browser format.
