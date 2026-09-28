@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "title": "엄마가 운동을 시작한 진짜 이유",
+  "orientation": "portrait",
+  "mood": "warm",
+  "fiction": true,
+  "photos": [
+    {
+      "src": "assets/story/mom-concert/01.png",
+      "name": "장면 1"
+    },
+    {
+      "src": "assets/story/mom-concert/02.png",
+      "name": "장면 2"
+    },
+    {
+      "src": "assets/story/mom-concert/03.png",
+      "name": "장면 3"
+    },
+    {
+      "src": "assets/story/mom-concert/04.png",
+      "name": "장면 4"
+    }
+  ],
+  "scenes": [
+    {
+      "photo": 0,
+      "speaker": "딸",
+      "text": "엄마, 요즘 왜 그렇게\n운동을 열심히 해?",
+      "seconds": 6,
+      "delay": 0
+    },
+    {
+      "photo": 1,
+      "speaker": "엄마",
+      "text": "오래오래 건강해야지.",
+      "seconds": 5,
+      "delay": 0
+    },
+    {
+      "photo": 2,
+      "speaker": "딸",
+      "text": "혹시… 어디 아픈 건 아니지?",
+      "seconds": 5,
+      "delay": 0
+    },
+    {
+      "photo": 3,
+      "speaker": "엄마",
+      "text": "아니! 다음 영웅님 콘서트도\n가야 하니까!",
+      "seconds": 8,
+      "delay": 1
+    }
+  ]
+}
