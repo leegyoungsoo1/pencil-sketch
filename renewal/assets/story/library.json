@@ -2,6 +2,11 @@
   "version": 1,
   "items": [
     {
+      "id": "ny-travel",
+      "title": "뉴욕에서 만난 임영웅의 세 가지 모습",
+      "cover": "city.png"
+    },
+    {
       "id": "mom-concert",
       "title": "엄마가 운동을 시작한 진짜 이유",
       "cover": "01.png"
