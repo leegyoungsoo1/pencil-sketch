@@ -4,3 +4,4 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important}}
 
 .hero-actions{flex-wrap:wrap}.button.story-button{background:#946044}.button.story-button:hover{background:#7b4e37}@media(max-width:600px){.hero-actions .story-button{min-width:180px}}
+.site-header nav{gap:clamp(12px,2vw,28px);margin-right:8px}@media(max-width:1000px){.site-header{flex-wrap:wrap}.site-header nav{order:3;flex:0 0 100%;justify-content:center;flex-wrap:wrap;margin:0;gap:14px 22px}}@media(max-width:600px){.site-header nav{display:flex;font-size:12px;justify-content:flex-start}html{scroll-padding-top:150px}}
