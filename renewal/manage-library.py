@@ -1,4 +1,4 @@
-"""Register a story and retain only the three most recently registered stories.
+"""Register a story and retain only the twenty most recently registered stories.
 
 Run before committing a new story: python renewal/manage-library.py --add slug
 Only directories explicitly listed in library.json are eligible for deletion.
@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent / 'assets' / 'story'
+MAX_ITEMS = 20
 
 def directory(root, slug):
     if not isinstance(slug, str) or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', slug):
@@ -41,7 +42,7 @@ def register(root, slug):
         directory(root, entry['id'])
     entry = {'id': slug, 'title': project['title'], 'cover': project['photos'][0]['src'].split(f'assets/story/{slug}/', 1)[1]}
     ordered = [entry] + [item for item in old if item['id'] != slug]
-    stale = [directory(root, item['id']) for item in ordered[3:]]
+    stale = [directory(root, item['id']) for item in ordered[MAX_ITEMS:]]
     # Validate every absolute target before any recursive deletion.
     for target in stale:
         if target.resolve().parent != root or target == folder:
@@ -49,7 +50,7 @@ def register(root, slug):
     for target in stale:
         if target.exists():
             shutil.rmtree(target)
-    manifest.write_text(json.dumps({'version': 1, 'items': ordered[:3]}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    manifest.write_text(json.dumps({'version': 1, 'items': ordered[:MAX_ITEMS]}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return [target.name for target in stale]
 
 if __name__ == '__main__':

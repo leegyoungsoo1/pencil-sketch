@@ -1,3 +1,5 @@
+> 이전 창작 중심 구성안입니다. 최신 검토안은 [LONGFORM-PROPOSAL.md](LONGFORM-PROPOSAL.md)를 사용합니다.
+
 # 웅토끼 극장 · 긴 이야기 구성안
 
 ## 한 편을 관통하는 질문
