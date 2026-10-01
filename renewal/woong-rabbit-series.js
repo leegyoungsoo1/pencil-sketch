@@ -35,18 +35,15 @@ const comicBeats=[
  [['speech','함께 만든 무대','♪','#80d9ff'],['thought','기억할게요','♥','#ff91aa'],['burst','여러분은요?','?','#ffd65c'],['impact','오늘도 건행!','★','#ff9164']]
 ];
 let storyIndex=0,time=0,playing=0,ready=false,busy=false,cancelled=false,downloadURL='',renderer,scene,camera,rabbit,shadow,particles,sceneObjects=[],fanVariant=0,audioContext,liveAudio={nodes:[],master:null};
-const sheets={},textures={greeting:[],actions:[],cardinal:[],diagonal:[]},backgroundTextures=[],fanTextures=[];
+const sheets={},textures={greeting:[],actions:[],cardinal:[],diagonal:[]},backgroundTextures=[],fanTextures=[],propTextures=[];
 const say=s=>$('status').textContent=s;
 async function loadImage(src){const im=new Image();im.src=src;await im.decode();return im;}
 function measure(im,cols,rows){const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0);const d=g.getImageData(0,0,c.width,c.height).data,frames=[];for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){const x0=Math.round(col*c.width/cols),x1=Math.round((col+1)*c.width/cols),y0=Math.round(row*c.height/rows),y1=Math.round((row+1)*c.height/rows);let l=x1,r=x0,t=y1,b=y0;for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)if(d[(y*c.width+x)*4+3]>32){l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);}frames.push({x:l,y:t,w:r-l+1,h:b-t+1});}return {im,frames};}
 function frameCanvas(sh,f){const c=document.createElement('canvas');c.width=f.w;c.height=f.h;c.getContext('2d').drawImage(sh.im,f.x,f.y,f.w,f.h,0,0,f.w,f.h);return c;}
 function texture(c){const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.minFilter=t.magFilter=THREE.LinearFilter;t.generateMipmaps=false;return t;}
 function photoTexture(im){const t=new THREE.Texture(im);t.colorSpace=THREE.SRGBColorSpace;t.minFilter=t.magFilter=THREE.LinearFilter;t.generateMipmaps=false;t.needsUpdate=true;return t;}
-function labelTexture(text,bg='#eff9ff',fg='#285b78'){const c=document.createElement('canvas');c.width=1024;c.height=220;const g=c.getContext('2d');g.fillStyle=bg;g.roundRect(10,10,1004,200,35);g.fill();g.strokeStyle='#86aec7';g.lineWidth=8;g.stroke();g.fillStyle=fg;g.textAlign='center';g.textBaseline='middle';g.font='800 68px "Nanum Gothic"';g.fillText(text,512,112);return texture(c);}
-function mat(color){return new THREE.MeshStandardMaterial({color,roughness:.82});}
-function box(w,h,d,color,x,y,z,name='소품'){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(color));o.position.set(x,y,z);o.castShadow=o.receiveShadow=true;o.name=name;o.userData.base=o.position.clone();scene.add(o);sceneObjects.push(o);return o;}
-function sign(text,x,y,z,w=4.5){const o=new THREE.Mesh(new THREE.PlaneGeometry(w,w*.215),new THREE.MeshBasicMaterial({map:labelTexture(text),transparent:true}));o.position.set(x,y,z);scene.add(o);sceneObjects.push(o);return o;}
 function fan(x,z,color=0xb9d2df,scale=1){const map=fanTextures[fanVariant++%fanTextures.length],o=new THREE.Sprite(new THREE.SpriteMaterial({map,transparent:true,alphaTest:.03,depthWrite:true})),im=map.image,h=2.25*scale;o.center.set(.5,0);o.scale.set(h*im.width/im.height,h,1);o.position.set(x,0,z);o.name='여성팬';o.userData.base=o.position.clone();o.userData.phase=fanVariant*.73;scene.add(o);sceneObjects.push(o);return o;}
+function prop(index,x,z,h=1.3){const map=propTextures[index%propTextures.length],o=new THREE.Sprite(new THREE.SpriteMaterial({map,transparent:true,alphaTest:.03,depthWrite:true})),im=map.image;o.center.set(.5,0);o.scale.set(h*im.width/im.height,h,1);o.position.set(x,0,z);o.name='실사소품';o.userData.base=o.position.clone();scene.add(o);sceneObjects.push(o);return o;}
 function baseSet(chapter){
  sceneObjects=[];fanVariant=0;scene=new THREE.Scene();scene.background=backgroundTextures[chapter-1]||new THREE.Color(0xdde9f0);scene.userData.background=`chapter-${String(chapter).padStart(2,'0')}`;
  scene.add(new THREE.HemisphereLight(0xf8fbff,0x8c725f,2.15));const sun=new THREE.DirectionalLight(0xffefd4,2.4);sun.position.set(-6,9,6);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
@@ -54,7 +51,7 @@ function baseSet(chapter){
 }
 function buildSet(story){
  baseSet(story.chapter);const type=story.set;
- if(type==='travel'){for(const x of [-3.8,-2.7])box(.55,.7,.35,0x70879d,x,.35,-2,'여행가방');fan(3,-2,0xe9b7c8,.9);fan(4,-2.5,0xb7d5c2,.82);}
+ if(type==='travel'){prop(0,-3.8,-4.7,1.35);prop(1,-2.55,-4.85,1.48);fan(3,-2,0xe9b7c8,.9);fan(4,-2.5,0xb7d5c2,.82);}
  if(type==='shop')fan(3,-2,0xc4d7a6,.9);
  if(type==='post')fan(-3,-3,0xe4bec8,.86);
  if(type==='photo')for(const x of [-3.6,0,3.6])fan(x,-7.8,0xf2e4d2,.72);
@@ -147,5 +144,6 @@ const backgroundFiles=['chapter-01-arrival.webp','chapter-02-lounge.webp','chapt
 cards();Promise.all([
  ...[['greeting','greeting.png',3,2],['actions','actions.png',3,2],['cardinal','walk-cardinal.png',4,4],['diagonal','walk-diagonal.png',4,4]].map(async([name,file,c,r])=>{sheets[name]=measure(await loadImage(`assets/woong-rabbit/${file}`),c,r);for(const f of sheets[name].frames)textures[name].push(texture(frameCanvas(sheets[name],f)));}),
  (async()=>{const sh=measure(await loadImage('assets/woong-rabbit/fans-korean-60s.webp'),3,2);for(const f of sh.frames)fanTextures.push(texture(frameCanvas(sh,f)));})(),
+ (async()=>{const sh=measure(await loadImage('assets/woong-rabbit/travel-props.webp'),2,1);for(const f of sh.frames)propTextures.push(texture(frameCanvas(sh,f)));})(),
  ...backgroundFiles.map(async(file,i)=>{backgroundTextures[i]=photoTexture(await loadImage(`assets/woong-rabbit/backgrounds/${file}`));}),document.fonts.ready
 ]).then(()=>{renderer=new THREE.WebGLRenderer({alpha:false,antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(1);renderer.setSize(W,H,false);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;ready=true;$('play').disabled=$('export').disabled=$('export-all').disabled=false;choose(0);}).catch(e=>say('불러오기 실패: '+e.message));
