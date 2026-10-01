@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>웅토끼 2.5D 무대 시험</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="woong-rabbit-3d.css">
+  <script type="module" src="woong-rabbit-3d.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <div><span class="eyebrow">THREE.JS 2.5D PILOT · CHAPTER 01</span><h1>기다림에도 자리가 필요해서</h1><p>승인된 웅토끼 그림을 그대로 사용해 공연장 바깥에서 시원한 실내 휴게 공간으로 안내하는 15초 시험 장면입니다.</p></div>
+    <nav><a href="woong-rabbit.html">웅토끼 극장</a><a href="index.html">추억 한 자루</a></nav>
+  </header>
+
+  <section class="compare" aria-labelledby="compare-heading">
+    <div class="section-title"><div><span class="eyebrow">LIVE COMPARISON</span><h2 id="compare-heading">같은 장면을 바로 비교하세요</h2></div><div class="mode" role="group" aria-label="화면 방식"><button id="three-mode" class="active" aria-pressed="true">2.5D 입체 무대</button><button id="flat-mode" aria-pressed="false">기존 2D</button></div></div>
+    <div class="stage"><canvas id="stage" width="1920" height="1080" aria-label="웅토끼 실내 휴게 공간 안내 장면"></canvas><div id="badge">THREE.JS · 2.5D</div></div>
+    <div class="timeline"><input id="seek" type="range" min="0" max="1500" value="0" aria-label="영상 재생 위치"><output id="clock">0:00 / 0:15</output></div>
+    <div class="controls"><button id="play" disabled>▶ 재생</button><button id="export" disabled>15초 MP4 저장</button><button id="cancel" hidden>저장 취소</button><label>화질 <select id="quality"><option value="1080">1080p</option><option value="720">720p · 가볍게</option></select></label><label><input id="captions" type="checkbox" checked> 큰 자막</label></div>
+    <p id="status" role="status" aria-live="polite">2.5D 무대와 캐릭터를 불러오고 있습니다…</p><a id="download" hidden>완성 영상 다시 저장</a>
+  </section>
+
+  <section class="beats"><span class="eyebrow">15 SECOND TEST</span><h2>장면의 흐름</h2><div class="beat-grid"><article><b>0–3초</b><h3>건행 인사</h3><p>공연장 바깥에서 오늘의 안내를 시작합니다.</p></article><article><b>3–8초</b><h3>입구로 이동</h3><p>카메라가 웅토끼를 따라가며 공간의 깊이가 드러납니다.</p></article><article><b>8–11초</b><h3>문이 열리는 순간</h3><p>유리문이 양쪽으로 열리고 시원한 실내가 나타납니다.</p></article><article><b>11–15초</b><h3>쉬어 가세요</h3><p>의자와 안내판 사이에서 휴게 공간을 소개합니다.</p></article></div></section>
+
+  <section><span class="eyebrow">WHY 2.5D</span><h2>얼굴은 그대로, 무대만 입체적으로</h2><p>캐릭터를 새 3D 얼굴로 바꾸지 않았습니다. 현재 승인된 투명 PNG 동작을 공간 안의 평면으로 사용하고, 카메라·문·의자·그림자·냉기 입자만 Three.js로 구성했습니다. 모바일에서 WebGL2를 사용할 수 없으면 기존 2D 화면으로 자동 전환합니다.</p><p class="note">이 장면은 기술 비교용 팬 창작 화면입니다. 공개 자료에서 확인한 2026년 고양 공연의 실내 휴게 공간 운영을 바탕으로 재구성했으며 실제 현장을 그대로 재현한 영상은 아닙니다.</p></section>
+</main>
+</body>
+</html>
