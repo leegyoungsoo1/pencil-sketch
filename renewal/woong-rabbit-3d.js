@@ -1,10 +1,11 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.min.js';
 
 'use strict';
-const $=id=>document.getElementById(id),canvas=$('stage'),ctx=canvas.getContext('2d'),W=1920,H=1080,duration=15;
+const $=id=>document.getElementById(id),canvas=$('stage'),ctx=canvas.getContext('2d'),W=1920,H=1080,duration=15,AUDIO_RATE=48000;
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),mix=(a,b,t)=>a+(b-a)*t,ease=t=>{t=clamp(t);return t*t*(3-2*t);};
 let ready=false,busy=false,playing=0,time=0,cancelled=false,downloadURL='',mode='three',webglReady=false;
 let renderer,scene,camera,rabbit,shadow,doors=[],particles,particleBase,chairs=[],signTexture;
+let audioContext,liveAudio={sources:[],master:null};
 const sheets={},textures={greeting:[],walk:[],actions:[],cardinal:[],diagonal:[]};
 const captions=[
   {end:3,line:'공연은 무대에서만 시작될까요?'},
@@ -13,6 +14,27 @@ const captions=[
   {end:15,line:'여기서 천천히 쉬어 가세요'}
 ];
 const say=s=>$('status').textContent=s;
+
+function scheduleSceneAudio(ac,destination,startAt=0,offset=0){
+  const master=ac.createGain(),sources=[];master.gain.value=Number($('volume').value)/100*3;master.connect(destination);
+  const visible=(at,length)=>at+length>offset&&at<duration;
+  const tone=(at,freq,length=.5,level=.05,type='sine',pan=0)=>{if(!visible(at,length))return;const begin=Math.max(at,offset),when=startAt+begin-offset,remain=at+length-begin,osc=ac.createOscillator(),gain=ac.createGain();osc.type=type;osc.frequency.value=freq;gain.gain.setValueAtTime(.0001,when);gain.gain.exponentialRampToValueAtTime(level,when+Math.min(.045,remain*.25));gain.gain.exponentialRampToValueAtTime(.0001,when+remain);if(ac.createStereoPanner){const p=ac.createStereoPanner();p.pan.value=pan;osc.connect(gain).connect(p).connect(master);}else osc.connect(gain).connect(master);osc.start(when);osc.stop(when+remain+.02);sources.push(osc);};
+  const noise=(at,length=.1,level=.08,frequency=500,pan=0,sweep=0)=>{if(!visible(at,length))return;const begin=Math.max(at,offset),when=startAt+begin-offset,remain=at+length-begin,count=Math.max(1,Math.ceil(remain*ac.sampleRate)),buffer=ac.createBuffer(1,count,ac.sampleRate),data=buffer.getChannelData(0);for(let i=0;i<count;i++){const random=Math.abs(Math.sin((i+1)*(at+1)*78.233)*43758.5453)%1;data[i]=(random*2-1)*Math.pow(1-i/count,1.8);}const src=ac.createBufferSource(),filter=ac.createBiquadFilter(),gain=ac.createGain();src.buffer=buffer;filter.type='lowpass';filter.frequency.setValueAtTime(frequency,when);if(sweep)filter.frequency.exponentialRampToValueAtTime(sweep,when+remain);gain.gain.setValueAtTime(level,when);gain.gain.exponentialRampToValueAtTime(.0001,when+remain);if(ac.createStereoPanner){const p=ac.createStereoPanner();p.pan.value=pan;src.connect(filter).connect(gain).connect(p).connect(master);}else src.connect(filter).connect(gain).connect(master);src.start(when);sources.push(src);};
+  const chords=[
+    [0,[261.63,329.63,392]], [3.75,[220,261.63,329.63]], [7.5,[174.61,220,261.63]], [11.25,[196,246.94,293.66]]
+  ];
+  for(const [at,notes] of chords)for(const [i,note] of notes.entries())tone(at,note,3.65,.018,i===0?'sine':'triangle',(i-1)*.22);
+  const melody=[523.25,659.25,587.33,392,440,523.25,493.88,392,349.23,440,523.25,659.25];
+  melody.forEach((note,i)=>tone(.35+i*1.2,note,.48,.032,'sine',i%2?.16:-.16));
+  [0.28,1.05,2.05].forEach((at,i)=>{tone(at,880+i*110,.42,.045,'sine',-.2+i*.2);tone(at+.06,1320+i*90,.35,.025,'sine',.2-i*.2);});
+  [3.78,4.2,4.63,5.04,5.78,6.22,6.69,7.16,7.68,8.18,8.7,9.24,9.8,10.32,10.78].forEach((at,i)=>noise(at,.105,.075,410,i%2?.26:-.26));
+  noise(8.05,1.55,.045,260,0,1250);tone(8.35,587.33,.6,.032,'sine',-.15);tone(8.52,783.99,.68,.03,'sine',.15);
+  [11.72,12.15,13.35,14.25].forEach((at,i)=>{tone(at,[659.25,783.99,880,1046.5][i],.72,.038,'sine',i%2?.18:-.18);tone(at+.08,[987.77,1174.66,1318.51,1567.98][i],.5,.018,'sine',0);});
+  return {sources,master};
+}
+function silenceAudio(){for(const source of liveAudio.sources)try{source.stop();}catch{}liveAudio={sources:[],master:null};canvas.dataset.sound='stopped';}
+async function startAudio(from){silenceAudio();if(!$('sound').checked)return;audioContext??=new AudioContext({sampleRate:AUDIO_RATE});await audioContext.resume();liveAudio=scheduleSceneAudio(audioContext,audioContext.destination,audioContext.currentTime+.06,from);canvas.dataset.sound='playing';}
+async function encodeSceneAudio(config){const channels=config.numberOfChannels,oac=new OfflineAudioContext(channels,Math.ceil(duration*AUDIO_RATE),AUDIO_RATE);scheduleSceneAudio(oac,oac.destination,0,0);const buffer=await oac.startRendering(),chunks=[];let failure;const encoder=new AudioEncoder({output:(chunk,meta)=>chunks.push({chunk,meta}),error:e=>failure=e});encoder.configure(config);for(let offset=0,step=AUDIO_RATE/10;offset<buffer.length;offset+=step){if(failure)throw failure;const length=Math.min(step,buffer.length-offset),data=new Float32Array(length*channels);for(let c=0;c<channels;c++)data.set(buffer.getChannelData(c).subarray(offset,offset+length),c*length);const packet=new AudioData({format:'f32-planar',sampleRate:AUDIO_RATE,numberOfFrames:length,numberOfChannels:channels,timestamp:Math.round(offset/AUDIO_RATE*1e6),data});encoder.encode(packet);packet.close();if(encoder.encodeQueueSize>16)await encoder.flush();}await encoder.flush();encoder.close();if(failure)throw failure;return chunks;}
 
 async function loadImage(src){const im=new Image();im.src=src;await im.decode();return im;}
 function measure(im,columns=3,rows=2){const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0);const d=g.getImageData(0,0,c.width,c.height).data,frames=[];for(let row=0;row<rows;row++)for(let col=0;col<columns;col++){const x0=Math.round(col*c.width/columns),x1=Math.round((col+1)*c.width/columns),y0=Math.round(row*c.height/rows),y1=Math.round((row+1)*c.height/rows);let l=x1,r=x0,t=y1,b=y0;for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)if(d[(y*c.width+x)*4+3]>32){l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);}if(r<=l||b<=t)throw Error('캐릭터 프레임이 비어 있습니다.');frames.push({x:l,y:t,w:r-l+1,h:b-t+1});}return {im,frames,columns,rows};}
@@ -89,14 +111,32 @@ function overlay(t){
 }
 function render(t){if(!ready)return;ctx.clearRect(0,0,canvas.width,canvas.height);if(mode==='three'&&webglReady)update3D(t);else renderFlat(t);overlay(t);$('clock').textContent=`0:${String(Math.min(15,Math.floor(t))).padStart(2,'0')} / 0:15`;}
 function setMode(next){mode=next==='three'&&webglReady?'three':'flat';$('three-mode').classList.toggle('active',mode==='three');$('flat-mode').classList.toggle('active',mode==='flat');$('three-mode').setAttribute('aria-pressed',mode==='three');$('flat-mode').setAttribute('aria-pressed',mode==='flat');$('badge').textContent=mode==='three'?'THREE.JS · 2.5D':'CANVAS · 2D';render(time);}
-function stop(){cancelAnimationFrame(playing);playing=0;$('play').textContent='▶ 재생';}
-$('play').onclick=()=>{if(playing){stop();return;}if(time>=duration-.02)time=0;const start=performance.now()-time*1000;const tick=now=>{time=clamp((now-start)/1000,0,duration);render(time);$('seek').value=time*100;if(time>=duration){stop();return;}playing=requestAnimationFrame(tick);};playing=requestAnimationFrame(tick);$('play').textContent='Ⅱ 일시정지';};
-$('seek').oninput=()=>{stop();time=Number($('seek').value)/100;render(time);};$('captions').onchange=()=>render(time);$('three-mode').onclick=()=>setMode('three');$('flat-mode').onclick=()=>setMode('flat');
+function stop(){cancelAnimationFrame(playing);playing=0;silenceAudio();$('play').textContent='▶ 재생';}
+$('play').onclick=async()=>{if(playing){stop();return;}if(time>=duration-.02)time=0;await startAudio(time);const start=performance.now()-time*1000;const tick=now=>{time=clamp((now-start)/1000,0,duration);render(time);$('seek').value=time*100;if(time>=duration){stop();return;}playing=requestAnimationFrame(tick);};playing=requestAnimationFrame(tick);$('play').textContent='Ⅱ 일시정지';};
+$('seek').oninput=()=>{stop();time=Number($('seek').value)/100;render(time);};$('captions').onchange=()=>render(time);$('sound').onchange=()=>{if(playing)stop();say($('sound').checked?'음악과 효과음이 켜졌습니다. 재생을 눌러 확인하세요.':'음악과 효과음을 끄고 무음으로 저장합니다.');};$('volume').oninput=()=>{if(liveAudio.master&&audioContext)liveAudio.master.gain.setTargetAtTime(Number($('volume').value)/100*3,audioContext.currentTime,.04);};$('three-mode').onclick=()=>setMode('three');$('flat-mode').onclick=()=>setMode('flat');
 function lock(on){busy=on;for(const el of document.querySelectorAll('button,input,select'))if(el.id!=='cancel')el.disabled=on;$('cancel').hidden=!on;}
 async function loadMuxer(){if(window.Mp4Muxer)return;await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js';s.onload=resolve;s.onerror=()=>reject(Error('영상 저장 도구를 불러오지 못했습니다.'));document.head.append(s);});}
-$('export').onclick=async()=>{stop();lock(true);cancelled=false;let encoder;try{if(!window.VideoEncoder)throw Error('MP4 저장은 최신 Chrome 또는 Edge에서 이용해 주세요.');say('15초 비교 영상을 준비하고 있습니다…');await loadMuxer();await document.fonts.ready;const height=Number($('quality').value),width=height===720?1280:1920;canvas.width=width;canvas.height=height;if(renderer)renderer.setSize(width,height,false);if(camera){camera.aspect=width/height;camera.updateProjectionMatrix();}const config={codec:'avc1.420028',width,height,bitrate:height===720?3500000:6500000,framerate:30};if(!(await VideoEncoder.isConfigSupported(config)).supported)throw Error('이 기기에서 선택한 화질을 지원하지 않습니다.');const target=new Mp4Muxer.ArrayBufferTarget(),mux=new Mp4Muxer.Muxer({target,video:{codec:'avc',width,height},fastStart:'in-memory'});let failure;encoder=new VideoEncoder({output:(c,m)=>mux.addVideoChunk(c,m),error:e=>failure=e});encoder.configure(config);const total=duration*30;for(let i=0;i<total;i++){if(cancelled)throw Error('저장을 취소했습니다.');if(failure)throw failure;render(i/30);const frame=new VideoFrame(canvas,{timestamp:Math.round(i*1e6/30),duration:Math.round(1e6/30)});encoder.encode(frame,{keyFrame:i%60===0});frame.close();if(i%8===0||encoder.encodeQueueSize>5){say(`15초 영상을 저장하고 있습니다… ${Math.floor(i/total*100)}%`);await new Promise(r=>setTimeout(r,0));while(encoder.encodeQueueSize>5){if(failure)throw failure;if(cancelled)throw Error('저장을 취소했습니다.');await new Promise(r=>setTimeout(r,10));}}}await encoder.flush();if(failure)throw failure;mux.finalize();if(downloadURL)URL.revokeObjectURL(downloadURL);downloadURL=URL.createObjectURL(new Blob([target.buffer],{type:'video/mp4'}));const a=$('download');a.href=downloadURL;a.download=`웅토끼-휴게공간-${mode==='three'?'2.5D':'2D'}-15초.mp4`;a.hidden=false;a.click();say('15초 MP4를 저장했습니다. 두 방식을 바꿔 각각 저장할 수 있습니다.');}catch(e){say(e.message);}finally{if(encoder&&encoder.state!=='closed')encoder.close();canvas.width=W;canvas.height=H;if(renderer)renderer.setSize(W,H,false);if(camera){camera.aspect=W/H;camera.updateProjectionMatrix();}lock(false);render(time);}};
+$('export').onclick=async()=>{
+  stop();lock(true);cancelled=false;let encoder;
+  try{
+    const withAudio=$('sound').checked;
+    if(!window.VideoEncoder)throw Error('MP4 저장은 최신 Chrome 또는 Edge에서 이용해 주세요.');
+    if(withAudio&&(!window.AudioEncoder||!window.OfflineAudioContext))throw Error('소리가 포함된 MP4 저장은 최신 Chrome 또는 Edge에서 이용해 주세요.');
+    say(withAudio?'음악과 효과음을 영상에 담고 있습니다…':'15초 무음 영상을 준비하고 있습니다…');await loadMuxer();await document.fonts.ready;
+    const height=Number($('quality').value),width=height===720?1280:1920;canvas.width=width;canvas.height=height;if(renderer)renderer.setSize(width,height,false);if(camera){camera.aspect=width/height;camera.updateProjectionMatrix();}
+    const config={codec:'avc1.420028',width,height,bitrate:height===720?3500000:6500000,framerate:30};if(!(await VideoEncoder.isConfigSupported(config)).supported)throw Error('이 기기에서 선택한 화질을 지원하지 않습니다.');
+    let audioConfig=null;
+    if(withAudio)for(const numberOfChannels of [2,1]){const candidate={codec:'mp4a.40.2',sampleRate:AUDIO_RATE,numberOfChannels,bitrate:128000};if((await AudioEncoder.isConfigSupported(candidate)).supported){audioConfig=candidate;break;}}
+    if(withAudio&&!audioConfig)throw Error('이 기기에서는 MP4 오디오 저장을 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용해 주세요.');
+    const target=new Mp4Muxer.ArrayBufferTarget(),mux=new Mp4Muxer.Muxer({target,firstTimestampBehavior:'offset',video:{codec:'avc',width,height,frameRate:30},...(audioConfig?{audio:{codec:'aac',numberOfChannels:audioConfig.numberOfChannels,sampleRate:AUDIO_RATE}}:{}),fastStart:'in-memory'});
+    const sounds=audioConfig?await encodeSceneAudio(audioConfig):[];let nextSound=0;const addSoundUntil=stamp=>{while(nextSound<sounds.length&&sounds[nextSound].chunk.timestamp<=stamp){const {chunk,meta}=sounds[nextSound++];mux.addAudioChunk(chunk,meta);}};
+    let failure;encoder=new VideoEncoder({output:(chunk,meta)=>{addSoundUntil(chunk.timestamp);mux.addVideoChunk(chunk,meta);},error:e=>failure=e});encoder.configure(config);
+    const total=duration*30;for(let i=0;i<total;i++){if(cancelled)throw Error('저장을 취소했습니다.');if(failure)throw failure;render(i/30);const frame=new VideoFrame(canvas,{timestamp:Math.round(i*1e6/30),duration:Math.round(1e6/30)});encoder.encode(frame,{keyFrame:i%60===0});frame.close();if(i%8===0||encoder.encodeQueueSize>5){say(`${audioConfig?'소리 포함 ':''}15초 영상을 저장하고 있습니다… ${Math.floor(i/total*100)}%`);await new Promise(r=>setTimeout(r,0));while(encoder.encodeQueueSize>5){if(failure)throw failure;if(cancelled)throw Error('저장을 취소했습니다.');await new Promise(r=>setTimeout(r,10));}}}
+    await encoder.flush();if(failure)throw failure;addSoundUntil(Infinity);mux.finalize();if(downloadURL)URL.revokeObjectURL(downloadURL);downloadURL=URL.createObjectURL(new Blob([target.buffer],{type:'video/mp4'}));const a=$('download');a.href=downloadURL;a.download=`웅토끼-휴게공간-${mode==='three'?'2.5D':'2D'}-${audioConfig?'음악효과음':'무음'}-15초.mp4`;a.hidden=false;a.click();say(audioConfig?'따뜻한 음악과 장면 효과음이 포함된 15초 MP4를 저장했습니다.':'15초 무음 MP4를 저장했습니다.');
+  }catch(e){say(e.message);}finally{if(encoder&&encoder.state!=='closed')encoder.close();canvas.width=W;canvas.height=H;if(renderer)renderer.setSize(W,H,false);if(camera){camera.aspect=W/H;camera.updateProjectionMatrix();}lock(false);render(time);}
+};
 $('cancel').onclick=()=>cancelled=true;
-window.addEventListener('beforeunload',()=>{if(downloadURL)URL.revokeObjectURL(downloadURL);if(renderer){scene?.traverse(o=>{o.geometry?.dispose?.();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose?.();m.dispose?.();}}});renderer.dispose();}});
+window.addEventListener('beforeunload',()=>{silenceAudio();audioContext?.close?.();if(downloadURL)URL.revokeObjectURL(downloadURL);if(renderer){scene?.traverse(o=>{o.geometry?.dispose?.();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose?.();m.dispose?.();}}});renderer.dispose();}});
 
 Promise.all([
   ...['greeting','walk','actions'].map(async name=>{sheets[name]=measure(await loadImage(`assets/woong-rabbit/${name}.png`));for(const f of sheets[name].frames)textures[name].push(canvasTexture(makeFrameCanvas(sheets[name],f)));}),
