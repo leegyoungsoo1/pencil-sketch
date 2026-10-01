@@ -5,7 +5,7 @@ const $=id=>document.getElementById(id),canvas=$('stage'),ctx=canvas.getContext(
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),mix=(a,b,t)=>a+(b-a)*t,ease=t=>{t=clamp(t);return t*t*(3-2*t);};
 let ready=false,busy=false,playing=0,time=0,cancelled=false,downloadURL='',mode='three',webglReady=false;
 let renderer,scene,camera,rabbit,shadow,doors=[],particles,particleBase,chairs=[],signTexture;
-const sheets={},textures={greeting:[],walk:[],actions:[]};
+const sheets={},textures={greeting:[],walk:[],actions:[],cardinal:[],diagonal:[]};
 const captions=[
   {end:3,line:'공연은 무대에서만 시작될까요?'},
   {end:8,line:'멀리서 온 팬들의 기다림'},
@@ -15,7 +15,7 @@ const captions=[
 const say=s=>$('status').textContent=s;
 
 async function loadImage(src){const im=new Image();im.src=src;await im.decode();return im;}
-function measure(im){const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0);const d=g.getImageData(0,0,c.width,c.height).data,frames=[];for(let row=0;row<2;row++)for(let col=0;col<3;col++){const x0=Math.round(col*c.width/3),x1=Math.round((col+1)*c.width/3),y0=Math.round(row*c.height/2),y1=Math.round((row+1)*c.height/2);let l=x1,r=x0,t=y1,b=y0;for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)if(d[(y*c.width+x)*4+3]>32){l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);}if(r<=l||b<=t)throw Error('캐릭터 프레임이 비어 있습니다.');frames.push({x:l,y:t,w:r-l+1,h:b-t+1});}return {im,frames};}
+function measure(im,columns=3,rows=2){const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0);const d=g.getImageData(0,0,c.width,c.height).data,frames=[];for(let row=0;row<rows;row++)for(let col=0;col<columns;col++){const x0=Math.round(col*c.width/columns),x1=Math.round((col+1)*c.width/columns),y0=Math.round(row*c.height/rows),y1=Math.round((row+1)*c.height/rows);let l=x1,r=x0,t=y1,b=y0;for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)if(d[(y*c.width+x)*4+3]>32){l=Math.min(l,x);r=Math.max(r,x);t=Math.min(t,y);b=Math.max(b,y);}if(r<=l||b<=t)throw Error('캐릭터 프레임이 비어 있습니다.');frames.push({x:l,y:t,w:r-l+1,h:b-t+1});}return {im,frames,columns,rows};}
 function makeFrameCanvas(sheet,frame){const c=document.createElement('canvas');c.width=frame.w;c.height=frame.h;c.getContext('2d').drawImage(sheet.im,frame.x,frame.y,frame.w,frame.h,0,0,frame.w,frame.h);return c;}
 function canvasTexture(c){const tx=new THREE.CanvasTexture(c);tx.colorSpace=THREE.SRGBColorSpace;tx.minFilter=THREE.LinearFilter;tx.magFilter=THREE.LinearFilter;tx.generateMipmaps=false;return tx;}
 function labelTexture(text){const c=document.createElement('canvas');c.width=1024;c.height=240;const g=c.getContext('2d');g.fillStyle='#eff9ff';g.roundRect(12,12,1000,216,36);g.fill();g.strokeStyle='#86aec7';g.lineWidth=10;g.stroke();g.fillStyle='#285b78';g.textAlign='center';g.textBaseline='middle';g.font='800 78px "Nanum Gothic",sans-serif';g.fillText(text,512,122);return canvasTexture(c);}
@@ -45,10 +45,12 @@ function buildScene(){
   webglReady=true;
 }
 
-function poseAt(t){if(t<3)return {name:'greeting',index:Math.min(5,Math.floor(t*2)),x:-2,z:1,bob:0};if(t<8){const p=ease((t-3)/5);return {name:'walk',index:Math.floor((t-3)*6)%6,x:mix(-2,.05,p),z:mix(1,-3.05,p),bob:Math.abs(Math.sin((t-3)*Math.PI*6))*.045};}if(t<11){const p=ease((t-8)/3);return {name:'walk',index:Math.floor((t-8)*5)%6,x:mix(.05,.72,p),z:mix(-3.05,-5.15,p),bob:Math.abs(Math.sin((t-8)*Math.PI*5))*.035};}return {name:'greeting',index:t<12.2?0:t<13.1?1:4,x:.72,z:-5.15,bob:0};}
+function directionalFrame(dx,dz,phase){const ax=Math.abs(dx),az=Math.abs(dz);let name,row,direction;if(ax<az*.42){name='cardinal';row=dz<0?3:0;direction=dz<0?'후면':'정면';}else if(az<ax*.42){name='cardinal';row=dx<0?1:2;direction=dx<0?'왼쪽':'오른쪽';}else{name='diagonal';if(dz<0){row=dx<0?0:1;direction=dx<0?'후면 왼쪽 대각선':'후면 오른쪽 대각선';}else{row=dx<0?2:3;direction=dx<0?'정면 왼쪽 대각선':'정면 오른쪽 대각선';}}return {name,index:row*4+phase,direction};}
+function walkingPose(t,x,z,dx,dz){const phase=(Math.floor((t-3)*5)%4+4)%4,frame=directionalFrame(dx,dz,phase),foot=[0,-.018,.012,-.01][phase];return {...frame,x,z,bob:foot};}
+function poseAt(t){if(t<3)return {name:'greeting',index:Math.min(5,Math.floor(t*2)),x:-2,z:1,bob:0,direction:'정면 인사'};if(t<5.2){const p=ease((t-3)/2.2),x=mix(-2,-.55,p),z=mix(1,-.2,p);return walkingPose(t,x,z,1.45,-1.2);}if(t<11){const p=ease((t-5.2)/5.8),x=mix(-.55,.72,p),z=mix(-.2,-5.15,p);return walkingPose(t,x,z,.35,-1.55);}return {name:'greeting',index:t<12.2?0:t<13.1?1:4,x:.72,z:-5.15,bob:0,direction:'정면 안내'};}
 function update3D(t){
   const pose=poseAt(t),doorP=ease((t-8)/1.8);doors[0].position.x=-.88-doorP*1.35;doors[1].position.x=.88+doorP*1.35;
-  rabbit.material.map=textures[pose.name][pose.index];rabbit.material.needsUpdate=true;const tx=rabbit.material.map.image,hh=3.55;rabbit.scale.set(hh*tx.width/tx.height,hh,1);rabbit.position.set(pose.x,pose.bob,pose.z);shadow.position.set(pose.x,.025,pose.z+.05);shadow.material.opacity=.83-pose.bob*5;
+  rabbit.material.map=textures[pose.name][pose.index];rabbit.material.needsUpdate=true;const tx=rabbit.material.map.image,hh=3.55;rabbit.scale.set(hh*tx.width/tx.height,hh,1);rabbit.position.set(pose.x,pose.bob,pose.z);shadow.position.set(pose.x,.025,pose.z+.05);shadow.material.opacity=.83-Math.max(0,pose.bob)*5;canvas.dataset.direction=pose.direction;
   const walkP=ease((t-3)/8),finish=ease((t-10)/5);camera.position.set(mix(-1.2,.25,walkP),mix(3.5,3.15,finish),mix(8.7,5.15,walkP));camera.lookAt(mix(-.45,.28,walkP),1.72,mix(-2.7,-5.7,walkP));
   particles.material.opacity=.13+.55*clamp((t-8.2)/2);const pos=particles.geometry.attributes.position.array;for(let i=0;i<particleBase.length;i++){const b=particleBase[i];pos[i*3]=b.x+Math.sin(t*.8+i)*.22;pos[i*3+1]=.25+((b.y+t*.18+i*.04)%3.25);pos[i*3+2]=b.z;}particles.geometry.attributes.position.needsUpdate=true;
   renderer.render(scene,camera);ctx.drawImage(renderer.domElement,0,0,canvas.width,canvas.height);
@@ -71,4 +73,8 @@ $('export').onclick=async()=>{stop();lock(true);cancelled=false;let encoder;try{
 $('cancel').onclick=()=>cancelled=true;
 window.addEventListener('beforeunload',()=>{if(downloadURL)URL.revokeObjectURL(downloadURL);if(renderer){scene?.traverse(o=>{o.geometry?.dispose?.();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose?.();m.dispose?.();}}});renderer.dispose();}});
 
-Promise.all(['greeting','walk','actions'].map(async name=>{sheets[name]=measure(await loadImage(`assets/woong-rabbit/${name}.png`));for(const f of sheets[name].frames)textures[name].push(canvasTexture(makeFrameCanvas(sheets[name],f)));}).concat(document.fonts.ready)).then(()=>{try{buildScene();}catch(e){mode='flat';$('three-mode').disabled=true;say(`${e.message} 기존 2D 화면으로 열었습니다.`);}ready=true;setMode(mode);$('play').disabled=$('export').disabled=false;if(webglReady)say('준비되었습니다. 2.5D와 기존 2D를 바꿔 비교해 보세요.');}).catch(e=>say('불러오기 실패: '+e.message));
+Promise.all([
+  ...['greeting','walk','actions'].map(async name=>{sheets[name]=measure(await loadImage(`assets/woong-rabbit/${name}.png`));for(const f of sheets[name].frames)textures[name].push(canvasTexture(makeFrameCanvas(sheets[name],f)));}),
+  ...[['cardinal','walk-cardinal.png'],['diagonal','walk-diagonal.png']].map(async([name,file])=>{sheets[name]=measure(await loadImage(`assets/woong-rabbit/${file}`),4,4);for(const f of sheets[name].frames)textures[name].push(canvasTexture(makeFrameCanvas(sheets[name],f)));}),
+  document.fonts.ready
+]).then(()=>{try{buildScene();}catch(e){mode='flat';$('three-mode').disabled=true;say(`${e.message} 기존 2D 화면으로 열었습니다.`);}ready=true;setMode(mode);$('play').disabled=$('export').disabled=false;if(webglReady)say('8방향 보행이 준비되었습니다. 문 안으로 들어갈 때 뒷모습과 발걸음을 확인해 보세요.');}).catch(e=>say('불러오기 실패: '+e.message));
