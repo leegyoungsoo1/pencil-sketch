@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>웅토끼 긴 이야기 제작실</title><link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="woong-rabbit-3d.css"><link rel="stylesheet" href="woong-rabbit-series.css"><script type="module" src="woong-rabbit-series.js"></script></head>
+<body><main>
+<header><div><span class="eyebrow">WOONG RABBIT LONGFORM STUDIO</span><h1>공연 전부터 달랐습니다</h1><p>팬의 기다림부터 집에서 함께한 순간까지, 6장 12개 이야기를 같은 웅토끼와 2.5D 무대로 제작합니다.</p></div><nav><a href="woong-rabbit.html">웅토끼 극장</a><a href="index.html">추억 한 자루</a></nav></header>
+<section class="story-map"><div class="section-title"><div><span class="eyebrow">6 CHAPTERS · 12 CLIPS</span><h2>이야기 순서</h2></div><strong id="total">총 6분</strong></div><div id="story-list" class="story-list" role="list"></div></section>
+<section class="compare production" aria-labelledby="production-heading"><div class="section-title"><div><span id="chapter-label" class="eyebrow">CHAPTER 01 · CLIP 01</span><h2 id="production-heading">건행으로 여는 질문</h2><p id="summary"></p></div><div class="fact-card"><b id="fact-year"></b><span id="fact-source"></span></div></div>
+<div class="stage"><canvas id="stage" width="1920" height="1080" aria-label="웅토끼 긴 이야기 2.5D 장면"></canvas><div id="badge">THREE.JS · 2.5D</div></div>
+<div class="timeline"><input id="seek" type="range" min="0" max="3000" value="0" aria-label="영상 재생 위치"><output id="clock">0:00 / 0:30</output></div>
+<div class="controls"><button id="play" disabled>▶ 재생</button><button id="export" disabled>선택 장면 MP4 저장</button><button id="cancel" hidden>저장 취소</button><label>화질 <select id="quality"><option value="1080">1080p</option><option value="720">720p · 가볍게</option></select></label><label><input id="captions" type="checkbox" checked> 큰 자막</label><label class="sound-control"><input id="sound" type="checkbox" checked> 음악·효과음</label><label class="volume-control">음량 <input id="volume" type="range" min="0" max="100" value="58" aria-label="음악과 효과음 음량"></label></div>
+<p id="status" role="status" aria-live="polite">12개 이야기를 준비하고 있습니다…</p><a id="download" hidden>완성 영상 다시 저장</a>
+</section>
+<section class="script-panel"><div><span class="eyebrow">NARRATION & THUMBNAIL</span><h2>선택한 장면의 해설</h2><p id="narration"></p></div><div class="asset-buttons"><button id="script-download">12개 전체 나레이션 저장</button><button id="thumbnail-download">대표 썸네일 저장</button></div></section>
+<section><span class="eyebrow">SOURCE & STORY RULE</span><h2>사실과 창작을 구분합니다</h2><p>연도·장소·출처가 다른 사례는 각 장면에 따로 표시합니다. 웅토끼와 팬 토끼의 행동은 확인된 운영 사실을 쉽게 설명하기 위한 AI 팬 창작 장면이며, 실제 발언이나 실제 공연 영상을 재현한 것이 아닙니다.</p><p class="note">자료: 2026 고양 현장 취재, 2025 서울 공연 관련 발표 인용 기사, 2025년 11월 30일 무료 생중계 운영사 자료. 상세 링크는 전체 나레이션 파일에 포함됩니다.</p></section>
+</main></body></html>
