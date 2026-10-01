@@ -49,7 +49,8 @@ function directionalFrame(dx,dz,phase){const ax=Math.abs(dx),az=Math.abs(dz);let
 function walkingPose(x,z,dx,dz,progress,cycles){const phase=Math.floor(clamp(progress,0,.9999)*cycles*4)%4,frame=directionalFrame(dx,dz,phase),foot=[0,-.018,.012,-.01][phase];return {...frame,x,z,bob:foot};}
 function stillDirection(name,row,direction,x,z){return {name,index:row*4,x,z,bob:0,direction};}
 function poseAt(t){
-  if(t<3)return {name:'greeting',index:Math.min(5,Math.floor(t*2)),x:-2,z:1,bob:0,direction:'정면 인사'};
+  t=Math.max(0,Number.isFinite(t)?t:0);
+  if(t<3)return {name:'greeting',index:Math.max(0,Math.min(5,Math.floor(t*2))),x:-2,z:1,bob:0,direction:'정면 인사'};
   if(t<3.2)return stillDirection('cardinal',0,'정면 회전 시작',-2,1);
   if(t<3.42)return stillDirection('cardinal',2,'오른쪽 회전',-2,1);
   if(t<3.65)return stillDirection('diagonal',1,'후면 오른쪽 대각선 회전',-2,1);
@@ -63,7 +64,9 @@ function poseAt(t){
 }
 function update3D(t){
   const pose=poseAt(t),doorP=ease((t-8)/1.8);doors[0].position.x=-.88-doorP*1.35;doors[1].position.x=.88+doorP*1.35;
-  rabbit.material.map=textures[pose.name][pose.index];rabbit.material.needsUpdate=true;const tx=rabbit.material.map.image,hh=3.55;rabbit.scale.set(hh*tx.width/tx.height,hh,1);rabbit.position.set(pose.x,pose.bob,pose.z);shadow.position.set(pose.x,.025,pose.z+.05);shadow.material.opacity=.83-Math.max(0,pose.bob)*5;canvas.dataset.direction=pose.direction;
+  const frames=textures[pose.name],nextMap=frames?.[Math.max(0,Math.min(frames.length-1,pose.index))]||textures.greeting[0];
+  if(rabbit.material.map!==nextMap){rabbit.material.map=nextMap;rabbit.material.needsUpdate=true;}
+  const tx=nextMap.image,hh=3.55;rabbit.scale.set(hh*tx.width/tx.height,hh,1);rabbit.position.set(pose.x,pose.bob,pose.z);shadow.position.set(pose.x,.025,pose.z+.05);shadow.material.opacity=.83-Math.max(0,pose.bob)*5;canvas.dataset.direction=pose.direction;
   const walkP=ease((t-3)/8),finish=ease((t-10)/5);camera.position.set(mix(-1.2,.25,walkP),mix(3.5,3.15,finish),mix(8.7,5.15,walkP));camera.lookAt(mix(-.45,.28,walkP),1.72,mix(-2.7,-5.7,walkP));
   particles.material.opacity=.13+.55*clamp((t-8.2)/2);const pos=particles.geometry.attributes.position.array;for(let i=0;i<particleBase.length;i++){const b=particleBase[i];pos[i*3]=b.x+Math.sin(t*.8+i)*.22;pos[i*3+1]=.25+((b.y+t*.18+i*.04)%3.25);pos[i*3+2]=b.z;}particles.geometry.attributes.position.needsUpdate=true;
   renderer.render(scene,camera);ctx.drawImage(renderer.domElement,0,0,canvas.width,canvas.height);
@@ -74,11 +77,20 @@ function drawSprite2D(pose){const sh=sheets[pose.name],f=sh.frames[pose.index],h
 function renderFlat(t){
   const sx=canvas.width/W,sy=canvas.height/H;ctx.save();ctx.scale(sx,sy);const sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#dbe8ef');sky.addColorStop(.55,'#edf1ee');sky.addColorStop(1,'#c7b597');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);ctx.fillStyle='#e8dfd2';ctx.fillRect(0,250,W,730);ctx.fillStyle='#c9b99f';ctx.fillRect(0,875,W,205);ctx.fillStyle='#b9d7df';ctx.fillRect(560,350,800,525);ctx.fillStyle='#5a7482';ctx.fillRect(945,350,30,525);ctx.fillStyle='#eff9ff';round(650,240,620,105,24,'#eff9ff');ctx.fillStyle='#285b78';ctx.textAlign='center';ctx.font='800 42px "Nanum Gothic"';ctx.fillText('시원한 실내 휴게 공간',960,307);ctx.fillStyle='#86a9bd';for(const x of [300,1580]){round(x-135,720,270,70,18,'#86a9bd');round(x-135,565,270,160,18,'#a9c1cf');}time=t;drawSprite2D(poseAt(t));ctx.restore();
 }
-function overlay(t){const sx=canvas.width/W,sy=canvas.height/H;ctx.save();ctx.scale(sx,sy);if($('captions').checked){const item=captions.find(x=>t<x.end)||captions.at(-1);round(235,86,1450,142,30,'rgba(18,43,61,.9)');ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='800 64px "Nanum Gothic",sans-serif';ctx.fillText(item.line,960,157);}round(44,27,350,46,23,'rgba(255,255,255,.9)');ctx.fillStyle='#356580';ctx.font='800 23px "Nanum Gothic"';ctx.textAlign='center';ctx.fillText('웅토끼 · 첫 장면 시험',219,57);ctx.fillStyle='rgba(19,42,57,.78)';ctx.font='700 23px "Nanum Gothic"';ctx.fillText('2026 고양 공연 관련 공개 자료를 바탕으로 재구성한 AI 팬 창작 화면',960,1042);ctx.restore();}
+function overlay(t){
+  const sx=canvas.width/W,sy=canvas.height/H;ctx.save();ctx.scale(sx,sy);
+  if($('captions').checked){
+    const item=captions.find(x=>t<x.end)||captions.at(-1),pose=poseAt(t),captionOnRight=pose.x<0;
+    const x=captionOnRight?1040:80,y=735,w=800,h=132;
+    round(x,y,w,h,28,'rgba(18,43,61,.88)');ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='800 50px "Nanum Gothic",sans-serif';ctx.fillText(item.line,x+w/2,y+h/2);
+    canvas.dataset.captionSide=captionOnRight?'right':'left';canvas.dataset.captionY=String(y);
+  }
+  round(44,27,350,46,23,'rgba(255,255,255,.9)');ctx.fillStyle='#356580';ctx.font='800 23px "Nanum Gothic"';ctx.textAlign='center';ctx.fillText('웅토끼 · 첫 장면 시험',219,57);ctx.fillStyle='rgba(19,42,57,.78)';ctx.font='700 23px "Nanum Gothic"';ctx.fillText('2026 고양 공연 관련 공개 자료를 바탕으로 재구성한 AI 팬 창작 화면',960,1042);ctx.restore();
+}
 function render(t){if(!ready)return;ctx.clearRect(0,0,canvas.width,canvas.height);if(mode==='three'&&webglReady)update3D(t);else renderFlat(t);overlay(t);$('clock').textContent=`0:${String(Math.min(15,Math.floor(t))).padStart(2,'0')} / 0:15`;}
 function setMode(next){mode=next==='three'&&webglReady?'three':'flat';$('three-mode').classList.toggle('active',mode==='three');$('flat-mode').classList.toggle('active',mode==='flat');$('three-mode').setAttribute('aria-pressed',mode==='three');$('flat-mode').setAttribute('aria-pressed',mode==='flat');$('badge').textContent=mode==='three'?'THREE.JS · 2.5D':'CANVAS · 2D';render(time);}
 function stop(){cancelAnimationFrame(playing);playing=0;$('play').textContent='▶ 재생';}
-$('play').onclick=()=>{if(playing){stop();return;}if(time>=duration-.02)time=0;const start=performance.now()-time*1000;const tick=now=>{time=Math.min(duration,(now-start)/1000);render(time);$('seek').value=time*100;if(time>=duration){stop();return;}playing=requestAnimationFrame(tick);};playing=requestAnimationFrame(tick);$('play').textContent='Ⅱ 일시정지';};
+$('play').onclick=()=>{if(playing){stop();return;}if(time>=duration-.02)time=0;const start=performance.now()-time*1000;const tick=now=>{time=clamp((now-start)/1000,0,duration);render(time);$('seek').value=time*100;if(time>=duration){stop();return;}playing=requestAnimationFrame(tick);};playing=requestAnimationFrame(tick);$('play').textContent='Ⅱ 일시정지';};
 $('seek').oninput=()=>{stop();time=Number($('seek').value)/100;render(time);};$('captions').onchange=()=>render(time);$('three-mode').onclick=()=>setMode('three');$('flat-mode').onclick=()=>setMode('flat');
 function lock(on){busy=on;for(const el of document.querySelectorAll('button,input,select'))if(el.id!=='cancel')el.disabled=on;$('cancel').hidden=!on;}
 async function loadMuxer(){if(window.Mp4Muxer)return;await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js';s.onload=resolve;s.onerror=()=>reject(Error('영상 저장 도구를 불러오지 못했습니다.'));document.head.append(s);});}
