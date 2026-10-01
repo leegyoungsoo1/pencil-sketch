@@ -67,20 +67,20 @@ function buildScene(){
   webglReady=true;
 }
 
-function directionalFrame(dx,dz,phase){const ax=Math.abs(dx),az=Math.abs(dz);let name,row,direction;if(ax<az*.42){name='cardinal';row=dz<0?3:0;direction=dz<0?'후면':'정면';}else if(az<ax*.42){name='cardinal';row=dx<0?1:2;direction=dx<0?'왼쪽':'오른쪽';}else{name='diagonal';if(dz<0){row=dx<0?0:1;direction=dx<0?'후면 왼쪽 대각선':'후면 오른쪽 대각선';}else{row=dx<0?2:3;direction=dx<0?'정면 왼쪽 대각선':'정면 오른쪽 대각선';}}return {name,index:row*4+phase,direction};}
+function directionalFrame(dx,dz,phase){const ax=Math.abs(dx),az=Math.abs(dz);let name,row,direction;if(ax<az*.42){name='cardinal';row=dz<0?3:0;direction=dz<0?'후면':'정면';}else if(az<ax*.42){name='cardinal';row=dx<0?2:1;direction=dx<0?'왼쪽':'오른쪽';}else{name='diagonal';if(dz<0){row=dx<0?1:0;direction=dx<0?'후면 왼쪽 대각선':'후면 오른쪽 대각선';}else{row=dx<0?2:3;direction=dx<0?'정면 왼쪽 대각선':'정면 오른쪽 대각선';}}return {name,index:row*4+phase,direction};}
 function walkingPose(x,z,dx,dz,progress,cycles){const phase=Math.floor(clamp(progress,0,.9999)*cycles*4)%4,frame=directionalFrame(dx,dz,phase),foot=[0,-.018,.012,-.01][phase];return {...frame,x,z,bob:foot};}
 function stillDirection(name,row,direction,x,z){return {name,index:row*4,x,z,bob:0,direction};}
 function poseAt(t){
   t=Math.max(0,Number.isFinite(t)?t:0);
   if(t<3)return {name:'greeting',index:Math.max(0,Math.min(5,Math.floor(t*2))),x:-2,z:1,bob:0,direction:'정면 인사'};
   if(t<3.2)return stillDirection('cardinal',0,'정면 회전 시작',-2,1);
-  if(t<3.42)return stillDirection('cardinal',2,'오른쪽 회전',-2,1);
-  if(t<3.65)return stillDirection('diagonal',1,'후면 오른쪽 대각선 회전',-2,1);
+  if(t<3.42)return stillDirection('cardinal',1,'오른쪽 회전',-2,1);
+  if(t<3.65)return stillDirection('diagonal',0,'후면 오른쪽 대각선 회전',-2,1);
   if(t<5.5){const p=ease((t-3.65)/1.85),x=mix(-2,-.55,p),z=mix(1,-.2,p);return walkingPose(x,z,1.45,-1.2,p,1);}
   if(t<11){const p=ease((t-5.5)/5.5),x=mix(-.55,.72,p),z=mix(-.2,-5.15,p);return walkingPose(x,z,.35,-1.55,p,3);}
   if(t<11.2)return stillDirection('cardinal',3,'후면 회전 시작',.72,-5.15);
-  if(t<11.4)return stillDirection('diagonal',0,'후면 왼쪽 대각선 회전',.72,-5.15);
-  if(t<11.6)return stillDirection('cardinal',1,'왼쪽 회전',.72,-5.15);
+  if(t<11.4)return stillDirection('diagonal',1,'후면 왼쪽 대각선 회전',.72,-5.15);
+  if(t<11.6)return stillDirection('cardinal',2,'왼쪽 회전',.72,-5.15);
   if(t<11.8)return stillDirection('diagonal',2,'정면 왼쪽 대각선 회전',.72,-5.15);
   return {name:'greeting',index:t<12.5?0:t<13.4?1:4,x:.72,z:-5.15,bob:0,direction:'정면 안내'};
 }
@@ -88,7 +88,7 @@ function update3D(t){
   const pose=poseAt(t),doorP=ease((t-8)/1.8);doors[0].position.x=-.88-doorP*1.35;doors[1].position.x=.88+doorP*1.35;
   const frames=textures[pose.name],nextMap=frames?.[Math.max(0,Math.min(frames.length-1,pose.index))]||textures.greeting[0];
   if(rabbit.material.map!==nextMap){rabbit.material.map=nextMap;rabbit.material.needsUpdate=true;}
-  const tx=nextMap.image,hh=3.55;rabbit.scale.set(hh*tx.width/tx.height,hh,1);rabbit.position.set(pose.x,pose.bob,pose.z);shadow.position.set(pose.x,.025,pose.z+.05);shadow.material.opacity=.83-Math.max(0,pose.bob)*5;canvas.dataset.direction=pose.direction;
+  const tx=nextMap.image,hh=3.55;rabbit.scale.set(hh*tx.width/tx.height,hh,1);rabbit.position.set(pose.x,pose.bob,pose.z);shadow.position.set(pose.x,.025,pose.z+.05);shadow.material.opacity=.83-Math.max(0,pose.bob)*5;canvas.dataset.direction=pose.direction;canvas.dataset.frame=`${pose.name}:${pose.index}`;
   const walkP=ease((t-3)/8),finish=ease((t-10)/5);camera.position.set(mix(-1.2,.25,walkP),mix(3.5,3.15,finish),mix(8.7,5.15,walkP));camera.lookAt(mix(-.45,.28,walkP),1.72,mix(-2.7,-5.7,walkP));
   particles.material.opacity=.13+.55*clamp((t-8.2)/2);const pos=particles.geometry.attributes.position.array;for(let i=0;i<particleBase.length;i++){const b=particleBase[i];pos[i*3]=b.x+Math.sin(t*.8+i)*.22;pos[i*3+1]=.25+((b.y+t*.18+i*.04)%3.25);pos[i*3+2]=b.z;}particles.geometry.attributes.position.needsUpdate=true;
   renderer.render(scene,camera);ctx.drawImage(renderer.domElement,0,0,canvas.width,canvas.height);
