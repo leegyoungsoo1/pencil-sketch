@@ -3,5 +3,11 @@
   "compatibility_date": "2026-10-04",
   "assets": {
     "directory": "./.public-site"
-  }
+  },
+  "routes": [
+    {
+      "pattern": "hero.openallstudio.com",
+      "custom_domain": true
+    }
+  ]
 }

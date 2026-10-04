@@ -15,6 +15,8 @@ Cloudflare Workers의 **Settings > Build**에서 다음처럼 설정합니다.
 
 `.public-site`는 Git에 저장하지 않는 생성 결과물입니다. 따라서 Cloudflare의 Build command를 생략하면 안 됩니다.
 
+공개 사용자 주소는 `https://hero.openallstudio.com`입니다. `wrangler.jsonc`의 `routes`에도 사용자 지정 도메인을 기록해 두었으므로 이후 재배포에서도 연결이 유지됩니다.
+
 로컬에서 공개판을 검사하려면 다음 명령을 실행합니다.
 
 ```powershell
