@@ -60,6 +60,8 @@
 
 대표 아이콘 원본은 `icons/woong-rabbit-icon-master.png`입니다. 아이콘 크기를 다시 만들 때는 `python renewal/generate-site-icons.py`를 실행합니다. 공개 빌드에는 실제로 사용하는 32·180·192·512px 아이콘과 마스커블 아이콘만 포함합니다.
 
+Cloudflare Pages의 파일당 제한에 맞춰 공개 파일은 모두 25MB 미만으로 유지합니다. `build-public-site.cjs`는 25MB 이상 파일을 발견하면 파일명과 크기를 표시하고 빌드를 중단합니다. 메인 웅토끼 영상은 1920×1080·30fps·36초를 유지한 고효율 H.264 파일입니다.
+
 추가 UI 검증: `node renewal/test-browser.cjs --public-controls` — 공통 서명·글꼴, 편지 분리, 10단위 조절, 파노라마 배치, 초기값 복원을 검사합니다. ONNX의 `env.wasm.proxy`를 켜 무거운 모델 추론을 Web Worker로 분리했습니다([공식 안내](https://onnxruntime.ai/docs/tutorials/web/env-flags-and-session-options.html)).
 
 ## 아틀리에 연필화

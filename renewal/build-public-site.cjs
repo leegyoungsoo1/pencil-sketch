@@ -18,7 +18,9 @@ const publicFiles=[
 ];
 const publicAssetFolders=['assets/official-news','assets/public-works','assets/woong-rabbit','assets/first-stadium','assets/warm-meal','assets/heroic-age','assets/hero-contest','assets/summer-kindness','assets/site','assets/atelier','assets/backgrounds'];
 const forbiddenPages=['official-promo-baila.html','woong-studio.html','story.html','woong-rabbit.html','woong-rabbit-series.html','sprite-stage.html','woong-rabbit-3d.html','warm-meal.html','summer-kindness.html','first-stadium.html','heroic-age.html','hero-contest.html'];
+const maxPublicFileBytes=25*1024*1024;
 function copyTree(source,destination){const stat=fs.statSync(source);if(stat.isDirectory()){fs.mkdirSync(destination,{recursive:true});for(const entry of fs.readdirSync(source))copyTree(path.join(source,entry),path.join(destination,entry))}else{fs.mkdirSync(path.dirname(destination),{recursive:true});fs.copyFileSync(source,destination)}}
+function allFiles(folder){return fs.readdirSync(folder,{withFileTypes:true}).flatMap(entry=>{const full=path.join(folder,entry.name);return entry.isDirectory()?allFiles(full):[full]})}
 
 fs.rmSync(outputRoot,{recursive:true,force:true});
 fs.mkdirSync(outputRenewal,{recursive:true});
@@ -36,5 +38,7 @@ const localReference=/\b(?:src|href)=["']([^"']+)["']/g;
 for(const relative of publicFiles.filter(file=>file.endsWith('.html'))){const htmlPath=path.join(outputRenewal,relative),html=fs.readFileSync(htmlPath,'utf8');for(const match of html.matchAll(localReference)){const value=match[1];if(!value||value.startsWith('#')||/^(?:https?:|data:|mailto:|javascript:)/i.test(value))continue;const clean=decodeURIComponent(value.split(/[?#]/)[0]);if(!clean)continue;const target=path.resolve(path.dirname(htmlPath),clean);if(!target.startsWith(outputRoot+path.sep)||!fs.existsSync(target))throw Error(`공개 HTML의 연결 파일이 없습니다: ${relative} -> ${clean}`)}}
 const cssReference=/url\(\s*["']?([^"')]+)["']?\s*\)/g;
 for(const relative of publicFiles.filter(file=>file.endsWith('.css'))){const cssPath=path.join(outputRenewal,relative),css=fs.readFileSync(cssPath,'utf8');for(const match of css.matchAll(cssReference)){const value=match[1];if(!value||/^(?:https?:|data:)/i.test(value))continue;const clean=decodeURIComponent(value.split(/[?#]/)[0]);const target=path.resolve(path.dirname(cssPath),clean);if(!target.startsWith(outputRoot+path.sep)||!fs.existsSync(target))throw Error(`공개 CSS의 연결 파일이 없습니다: ${relative} -> ${clean}`)}}
+const oversized=allFiles(outputRoot).filter(file=>fs.statSync(file).size>=maxPublicFileBytes);
+if(oversized.length)throw Error(`Cloudflare의 파일당 25MB 제한을 넘었습니다:\n${oversized.map(file=>`${path.relative(outputRoot,file)} (${(fs.statSync(file).size/1024/1024).toFixed(2)}MB)`).join('\n')}`);
 console.log(`공개 사이트 빌드 완료: ${path.relative(repoRoot,outputRoot)}`);
-console.log(`공개 HTML ${publicFiles.filter(file=>file.endsWith('.html')).length}개 · 관리자 제작 HTML 0개`);
+console.log(`공개 HTML ${publicFiles.filter(file=>file.endsWith('.html')).length}개 · 관리자 제작 HTML 0개 · 25MB 이상 파일 0개`);
