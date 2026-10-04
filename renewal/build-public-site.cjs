@@ -14,7 +14,7 @@ const publicFiles=[
   'work-view.html','work-view.css','work-view.js',
   'atelier.html','atelier.css','style-upgraded.css','mode-switch.css','studio.css','portrait.js','hand-motion.js','studio-graphite.js','atelier-app.js','atelier.js',
   'manifest.webmanifest',
-  'icons/woong-rabbit-32.png','icons/woong-rabbit-180.png','icons/woong-rabbit-192.png','icons/woong-rabbit-512.png','icons/woong-rabbit-maskable-512.png'
+  'icons/woong-rabbit-rounded-32.png','icons/woong-rabbit-rounded-180.png','icons/woong-rabbit-rounded-192.png','icons/woong-rabbit-rounded-512.png','icons/woong-rabbit-maskable-v2-512.png'
 ];
 const publicAssetFolders=['assets/official-news','assets/public-works','assets/woong-rabbit','assets/first-stadium','assets/warm-meal','assets/heroic-age','assets/hero-contest','assets/summer-kindness','assets/site','assets/atelier','assets/backgrounds'];
 const forbiddenPages=['official-promo-baila.html','woong-studio.html','story.html','woong-rabbit.html','woong-rabbit-series.html','sprite-stage.html','woong-rabbit-3d.html','warm-meal.html','summer-kindness.html','first-stadium.html','heroic-age.html','hero-contest.html'];
