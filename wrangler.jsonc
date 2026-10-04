@@ -1,6 +1,8 @@
 {
   "name": "pencil-sketch",
   "compatibility_date": "2026-10-04",
+  "workers_dev": true,
+  "preview_urls": true,
   "assets": {
     "directory": "./.public-site"
   },
