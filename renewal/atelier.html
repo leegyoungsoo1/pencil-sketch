@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="mode-switch.css?v=20261004-01" />
   <link rel="stylesheet" href="studio.css?v=20261004-01" />
   <link rel="stylesheet" href="fan-site.css?v=20261004-02" />
-  <link rel="stylesheet" href="atelier.css?v=20261004-03">
+  <link rel="stylesheet" href="atelier.css?v=20261004-04">
 </head>
 <body>
   <header class="fan-header"><a class="fan-brand" href="index.html">웅토끼 팬 스튜디오<span>UNOFFICIAL FAN CREATIVE SPACE</span></a><nav aria-label="주요 메뉴"><a href="index.html#news">영웅 새소식</a><a href="index.html#theater">웅토끼 극장</a><a href="fan-maker.html">직접 만들기</a><a href="atelier.html" aria-current="page">연필 스케치</a></nav><a class="header-create" href="fan-maker.html">15초 영상 만들기 ↗</a></header>
@@ -38,7 +38,7 @@
       <input id="photo" class="visually-hidden" type="file" accept="image/*" multiple />
       <p class="help">여러 사진을 한 번에 선택하거나 추가하세요. 필요 없는 사진을 삭제한 다음 만들기를 누르면 분석을 시작합니다.</p>
               <div class="field quick-orientation"><label for="orientation">영상 방향</label><select id="orientation"><option value="portrait">세로 · 9:16 (1080 × 1920)</option><option value="landscape">가로 · 16:9 롱폼 (1920 × 1080)</option></select></div>
-      <div class="draft-actions"><button id="createArtwork" type="button" class="btn btn-primary">만들기 · 선택한 사진 분석</button><button id="resetProject" type="button" class="btn btn-secondary">새 작업 · 초기화</button></div>
+      <div class="draft-actions"><button id="createArtwork" type="button" class="btn btn-primary" aria-label="선택한 사진을 분석하고 그림 만들기">만들기</button><button id="resetProject" type="button" class="btn btn-secondary" aria-label="현재 작업을 지우고 처음부터 시작하기">처음부터</button></div>
       <div id="photoQueue" class="photo-queue" aria-label="사진 순서"></div>
       <p id="projectSummary" class="help" aria-live="polite"></p>
       <p id="status" class="status" role="status">사진을 추가하고 목록을 정리한 뒤 만들기를 눌러 주세요. 분석은 만들기를 눌렀을 때 시작합니다.</p>
@@ -118,9 +118,9 @@
         <div class="field">
           <label for="style">그림 스타일</label>
           <select id="style">
-            <option value="graphite" selected>아틀리에 연필화 · 마법처럼 완성</option><option value="ai">정밀 선화 (AI)</option>
+            <option value="ai" selected>정밀 선화 (AI)</option><option value="graphite">아틀리에 연필화 · 마법처럼 완성</option>
           </select>
-          <p class="help">아틀리에 연필화는 붓이 그림 위를 오가며 빛가루를 흩뿌리고, 설정한 영상 길이에 맞춰 서서히 완성됩니다. 마지막 10% 시간에는 완성 그림을 감상합니다.</p>
+          <p class="help">정밀 선화는 얼굴과 윤곽을 또렷하게 표현합니다. 아틀리에 연필화는 빛가루와 함께 서서히 완성됩니다.</p>
         </div>
         <div class="field slider">
           <label for="darkness">선 진하기</label>

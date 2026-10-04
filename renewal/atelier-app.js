@@ -2462,7 +2462,7 @@ async function addPhotos(files) {
  if(first>=0)restoreSelectedPhoto(first);renderFrame(0);renderQueue();updateProjectSummary();status.textContent=failed?`${failed}장은 열 수 없습니다. 나머지 사진을 정리한 뒤 만들기를 눌러 주세요.`:'사진을 목록에 담았습니다. 필요 없는 사진을 지운 뒤 만들기를 눌러 주세요.';
  }finally{photoInput.value='';setBusy(false);}
 }
-function projectReady(){if(photos.length&&photos.every(p=>p.analysis))return true;status.textContent='설정이 변경되었거나 아직 분석하지 않은 사진이 있습니다. 위의 만들기 · 선택한 사진 분석 버튼을 눌러 주세요.';const notice=document.querySelector('#processingNotice');notice.hidden=false;notice.textContent=status.textContent;setTimeout(()=>{if(busyBox.hidden)notice.hidden=true;},7000);document.querySelector('#createArtwork').scrollIntoView({block:'center',behavior:'smooth'});return false;}
+function projectReady(){if(photos.length&&photos.every(p=>p.analysis))return true;status.textContent='설정이 변경되었거나 아직 분석하지 않은 사진이 있습니다. 위의 만들기 버튼을 눌러 주세요.';const notice=document.querySelector('#processingNotice');notice.hidden=false;notice.textContent=status.textContent;setTimeout(()=>{if(busyBox.hidden)notice.hidden=true;},7000);document.querySelector('#createArtwork').scrollIntoView({block:'center',behavior:'smooth'});return false;}
 document.querySelector('#createArtwork').addEventListener('click',async()=>{
  if(!photos.length){status.textContent='사진을 먼저 추가해 주세요.';return;}
  stopPlayback();clearTimeout(messageTimer);savePhotoWords();setBusy(true);showBusy('선택한 사진을 분석하고 있습니다…');let failed=0,failureMessage='';
