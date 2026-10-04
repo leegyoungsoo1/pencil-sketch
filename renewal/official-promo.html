@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>웅토끼 공식소식 쇼츠 제작실</title>
+<meta name="description" content="공식 영상 소식을 웅토끼 25초 홍보 쇼츠로 만드는 작업실">
+<meta name="theme-color" content="#173b5b"><link rel="icon" href="icons/favicon-32.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Nanum+Gothic:wght@400;700;800&display=swap">
+<link rel="stylesheet" href="official-promo.css?v=20261004-01">
+<script src="official-promo.js?v=20261004-01" defer></script>
+</head>
+<body>
+<header class="promo-header"><a class="brand" href="woong-studio.html">웅토끼 작업실<span>OFFICIAL NEWS SHORTS</span></a><nav><a href="woong-studio.html">작업실 모음</a><a href="index.html">추억 한 자루</a></nav></header>
+<main>
+<section class="intro"><div><p class="eyebrow">WOONG RABBIT OFFICIAL NEWS · 25 SEC</p><h1>공식 소식을<br><span>웅토끼 쇼츠로.</span></h1><p>공식 영상의 화면을 복사하지 않고 웅토끼가 새 소식을 전합니다.<br>완성된 무음 MP4에 YouTube 앱의 공식 리믹스 음원을 붙여 주세요.</p></div><div class="official-note"><b>이번 기본 소식</b><strong>임영웅 ‘Baila’<br>공식 라이브 클립</strong><span>2026 IM HERO · THE STADIUM 2</span></div></section>
+
+<section class="settings panel"><div class="section-title"><span>01</span><div><p class="eyebrow">NEWS INFORMATION</p><h2>홍보할 공식 소식</h2></div></div><div class="form-grid">
+<label>큰 제목<input id="news-title" maxlength="34" value="Baila 공식 라이브 공개!"></label>
+<label>공연·앨범 이름<input id="news-subtitle" maxlength="46" value="IM HERO · THE STADIUM 2"></label>
+<label>유튜브 검색 문구<input id="search-phrase" maxlength="42" value="임영웅 Baila 공식 라이브"></label>
+<label>공식 영상 주소<input id="video-url" type="url" value="https://youtu.be/-wGXnDzPovw"></label>
+<label class="wide">공식 카페 공지 주소<input id="cafe-url" type="url" value="https://cafe.daum.net/hero0616/g7aK/945"></label>
+</div><div class="setting-actions"><button id="apply">입력 내용 적용</button><button id="reset" class="secondary">Baila 예제로 되돌리기</button></div><p id="input-status" role="status" aria-live="polite">Baila 공식소식 예제가 입력되어 있습니다.</p></section>
+
+<section class="preview panel"><div class="section-title"><span>02</span><div><p class="eyebrow">PREVIEW & DOWNLOAD</p><h2>25초 쇼츠 미리보기</h2></div></div><div class="preview-layout"><div class="phone"><canvas id="stage" width="720" height="1280" aria-label="웅토끼 공식소식 25초 쇼츠 미리보기"></canvas><i>9:16 · 720 × 1280</i></div><div class="preview-tools"><div class="timeline"><input id="seek" type="range" min="0" max="2500" value="0" aria-label="영상 재생 위치"><output id="clock">0:00 / 0:25</output></div><div class="controls"><button id="play" disabled>▶ 미리보기</button><button id="export" disabled>25초 MP4 저장</button><button id="cancel" class="secondary" hidden>저장 취소</button></div><p id="status" role="status" aria-live="polite">웅토끼와 장면을 준비하고 있습니다…</p><a id="ready-download" hidden>완성 영상 다시 저장</a><div class="silent-box"><strong>영상은 일부러 무음으로 저장됩니다.</strong><p>YouTube 앱에서 공식 영상의 <b>공유 → 리믹스 → 이 사운드 사용</b>을 선택해 완성 영상에 붙이면 원본 출처가 자동으로 연결됩니다.</p><a href="https://youtu.be/-wGXnDzPovw" target="_blank" rel="noopener">Baila 공식 영상 열기 ↗</a></div></div></div></section>
+
+<section class="downloads panel"><div class="section-title"><span>03</span><div><p class="eyebrow">UPLOAD PACKAGE</p><h2>업로드 재료 한 번에 받기</h2></div></div><div class="download-grid"><button id="narration" disabled><b>전체 나레이션</b><span>TTS용 TXT 저장</span></button><button id="thumbnail" disabled><b>세로 썸네일</b><span>1080 × 1920 PNG 저장</span></button><button id="description" disabled><b>업로드 설명문</b><span>공식 주소 포함 TXT 저장</span></button></div><div class="script-card"><p class="eyebrow">25 SECOND NARRATION</p><p id="script-preview"></p></div></section>
+
+<section class="how"><div><p class="eyebrow">YOUTUBE REMIX</p><h2>공식 영상으로<br>연결하는 방법</h2></div><ol><li><b>1</b><span><strong>무음 MP4를 저장합니다</strong>이 작업실에서 영상과 나레이션을 내려받습니다.</span></li><li><b>2</b><span><strong>공식 영상에서 리믹스를 누릅니다</strong>YouTube 모바일 앱에서 ‘이 사운드 사용’을 선택합니다.</span></li><li><b>3</b><span><strong>웅토끼 영상을 올립니다</strong>공식 음원을 붙이면 원본 영상 출처가 자동 표시됩니다.</span></li></ol><p class="source-note">리믹스 메뉴가 보이지 않으면 음원 없이 올리고, 영상 안의 검색 문구로 공식 영상을 안내해 주세요. 팬 제작 홍보 영상이며 공식 채널을 사칭하지 않습니다.</p></section>
+</main>
+<footer><a href="woong-studio.html">← 웅토끼 작업실로 돌아가기</a><span>팬 제작 공식소식 홍보 도구 · 추억 한 자루</span></footer>
+</body></html>

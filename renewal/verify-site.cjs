@@ -19,7 +19,7 @@ module.exports=async({chromium,server,root})=>{
   assert.equal(await page.locator('.hero-actions a').count(),3);
   await page.locator('.site-header .woong-link').click();await page.waitForURL('**/woong-studio.html');
   assert.equal(await page.locator('.story-card').count(),5);
-  assert.equal(await page.locator('.maker-grid a').count(),4);
+  assert.equal(await page.locator('.maker-grid a').count(),5);
   const hubImages=await page.evaluate(async()=>{const ims=[...document.images];await Promise.all(ims.map(im=>im.decode()));return ims.every(im=>im.naturalWidth>0)});assert(hubImages);
   for(const width of [1440,390]){await page.setViewportSize({width,height:950});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`hub overflow ${width}`);await page.screenshot({path:path.join(out,`woong-studio-${width}.png`),fullPage:true});}
   await page.locator('.site-header .atelier-link').click();await page.waitForURL('**/atelier.html');
