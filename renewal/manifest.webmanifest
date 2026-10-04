@@ -1,13 +1,13 @@
 {
-  "name": "추억 한 자루",
-  "short_name": "추억 한 자루",
-  "description": "사진을 넣으면 연필이 한 획씩 초상화를 그려 나가는 영상을 만듭니다.",
+  "name": "웅토끼 팬 스튜디오",
+  "short_name": "웅토끼 스튜디오",
+  "description": "임영웅 새소식과 팬 영상을 보고, 내 사진으로 15초 영상과 연필 스케치를 만드는 비공식 팬 창작 공간입니다.",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f6f0e3",
-  "theme_color": "#f6f0e3",
+  "background_color": "#f7f5ee",
+  "theme_color": "#eaf4f7",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

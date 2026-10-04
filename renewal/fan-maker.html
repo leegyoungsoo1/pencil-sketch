@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>15초 팬 영상 만들기 · 웅토끼 팬 스튜디오</title>
+<meta name="description" content="내 사진 여러 장과 큰 글자를 넣어 15초 세로 팬 영상을 기기 안에서 바로 만드세요.">
+<meta name="theme-color" content="#eaf4f7"><link rel="icon" href="icons/favicon-32.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Nanum+Gothic:wght@400;700;800&display=swap">
+<link rel="stylesheet" href="fan-site.css?v=20261004-01"><link rel="stylesheet" href="fan-maker.css?v=20261004-01">
+<script src="fan-maker.js?v=20261004-01" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">본문 바로가기</a>
+<header class="fan-header"><a class="fan-brand" href="index.html">웅토끼 팬 스튜디오<span>UNOFFICIAL FAN CREATIVE SPACE</span></a><nav aria-label="주요 메뉴"><a href="index.html#news">영웅 새소식</a><a href="index.html#theater">웅토끼 극장</a><a href="fan-maker.html" aria-current="page">직접 만들기</a><a href="atelier.html">연필 스케치</a></nav><a class="header-create" href="index.html">팬 스튜디오 홈 ↗</a></header>
+<main id="main" class="maker-page">
+<section class="maker-hero"><div><p class="eyebrow">MY 15 SECOND FAN VIDEO</p><h1>사진과 문장으로,<br><span>나만의 15초.</span></h1><p>좋아하는 사진과 내 사진을 여러 장 고르고, 사진마다 짧은 문장을 적어 보세요. 큰 글자와 부드러운 화면 전환이 들어간 세로 MP4로 완성됩니다.</p></div><div class="privacy-card"><b>사진은 안전하게</b><strong>이 기기 안에서만<br>사용됩니다.</strong><span>서버 전송 없음 · 회원가입 없음 · 바로 저장</span></div></section>
+
+<section class="maker-layout">
+<div class="maker-settings">
+<section class="maker-panel"><div class="panel-title"><span>01</span><div><p class="eyebrow">PHOTO</p><h2>사진을 골라 주세요</h2></div></div><label class="upload-box" for="photos"><b>사진 여러 장 선택하기</b><span>JPG · PNG · WEBP · 최대 8장</span><input id="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p class="helper">사진 순서대로 15초 영상이 이어집니다. 필요 없는 사진은 아래에서 삭제할 수 있습니다.</p><div id="photo-list" class="photo-list"><p class="empty">아직 선택한 사진이 없습니다.</p></div></section>
+
+<section class="maker-panel"><div class="panel-title"><span>02</span><div><p class="eyebrow">WORDS & MOOD</p><h2>제목과 분위기</h2></div></div><div class="form-grid"><label>영상 제목<input id="title" maxlength="34" value="우리의 소중한 순간"></label><label>마지막 인사<input id="ending" maxlength="18" value="건행~"></label><label>영상 분위기<select id="theme"><option value="hero">영웅 블루</option><option value="warm">따뜻한 추억</option><option value="celebrate">축하와 설렘</option><option value="concert">콘서트의 밤</option></select></label><label>사진 맞춤<select id="fit"><option value="cover">화면 가득 채우기</option><option value="contain">사진 전체 보이기</option></select></label></div><p class="helper">사진별 문구는 사진 목록에서 각각 작성할 수 있습니다.</p></section>
+<button id="reset" class="reset-button">모두 지우고 새로 시작</button>
+</div>
+
+<aside class="maker-preview"><div class="preview-sticky"><div class="panel-title"><span>03</span><div><p class="eyebrow">PREVIEW & SAVE</p><h2>15초 영상 미리보기</h2></div></div><div class="phone"><canvas id="stage" width="720" height="1280" aria-label="15초 팬 영상 미리보기"></canvas><i>9:16 · 720 × 1280</i></div><div class="timeline"><input id="seek" type="range" min="0" max="1500" value="0" aria-label="영상 재생 위치"><output id="clock">0:00 / 0:15</output></div><div class="preview-actions"><button id="play">▶ 미리보기</button><button id="export" disabled>15초 MP4 저장</button><button id="thumbnail" disabled>대표 사진 저장</button><button id="cancel" class="subtle" hidden>저장 취소</button></div><p id="status" role="status" aria-live="polite">사진을 선택하면 영상을 만들 수 있습니다.</p><a id="ready-download" hidden>완성 영상 다시 저장</a><div class="privacy-note"><strong>내 사진은 어디에도 올라가지 않습니다.</strong><p>영상 제작은 현재 브라우저 안에서 처리됩니다. 페이지를 닫으면 선택한 사진도 사라집니다.</p></div></div></aside>
+</section>
+</main>
+<footer><a class="fan-brand" href="index.html">웅토끼 팬 스튜디오<span>UNOFFICIAL FAN CREATIVE SPACE</span></a><p>사진은 서버에 저장하지 않는 브라우저 팬 영상 제작기입니다.</p><div><a href="index.html#news">새소식</a><a href="index.html#theater">웅토끼 극장</a><a href="atelier.html">연필 스케치</a><a href="index.html">홈으로</a></div><small>© 2026 Woong Rabbit Fan Studio</small></footer>
+</body>
+</html>

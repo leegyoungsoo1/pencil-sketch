@@ -1,0 +1,25 @@
+{
+  "updatedAt": "2026-10-04",
+  "news": [
+    {
+      "id": "baila-live",
+      "episode": "01",
+      "date": "2026. 10. 01",
+      "category": "공식 영상 공개",
+      "title": "임영웅 ‘Baila’ 공식 라이브 공개",
+      "summary": "IM HERO · THE STADIUM 2의 뜨거운 무대를 웅토끼 공식소식 1편으로 만나보세요.",
+      "image": "assets/official-news/baila-official.png",
+      "cover": "assets/official-news/baila-cover.webp",
+      "href": "news-baila.html",
+      "officialUrl": "https://youtu.be/-wGXnDzPovw",
+      "duration": "25 SEC"
+    }
+  ],
+  "works": [
+    {"episode":"05","tag":"따뜻한 나눔","title":"영웅시대가 차린 따뜻한 한 끼","summary":"팬들의 응원이 이웃을 위한 한 끼가 되는 이야기","image":"assets/warm-meal/backgrounds/kitchen.webp"},
+    {"episode":"04","tag":"한여름의 선물","title":"파란 손들이 움직였습니다","summary":"무더운 여름, 이웃을 향해 움직인 따뜻한 마음","image":"assets/summer-kindness/backgrounds/community-hall.webp"},
+    {"episode":"03","tag":"팬의 특별한 하루","title":"일흔 살 엄마의 첫 스타디움","summary":"처음 만난 파란빛과 다시 소녀가 된 하루","image":"assets/first-stadium/backgrounds/stadium-plaza.webp"},
+    {"episode":"02","tag":"꿈을 키운 응원","title":"팬들이 키운 꿈의 무대","summary":"한 사람의 꿈을 무대 위로 올린 응원의 힘","image":"assets/hero-contest/backgrounds/stage.webp"},
+    {"episode":"01","tag":"영웅시대 미담","title":"이게 바로 영웅시대입니다","summary":"팬으로 시작해 누군가의 영웅이 된 사람들","image":"assets/heroic-age/backgrounds/finale.webp"}
+  ]
+}

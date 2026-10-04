@@ -29,7 +29,7 @@ function render(t){
 }
 function narrationText(){return `웅토끼가 급하게 달려왔어요! 임영웅 공식 유튜브에 ${data.subtitle}의 ${data.title.replace(/!+$/,'')} 소식이 공개됐습니다. 그날의 뜨거운 무대는 꼭 공식 영상에서 만나 보세요. 유튜브에서 '${data.search}'를 검색하고, 좋아요와 응원도 공식 영상에 남겨 주세요. 건행!`}
 function descriptionText(){return `임영웅 공식 유튜브에\n‘${data.title.replace(/!+$/,'')}’ 소식이 공개됐습니다.\n\n이 쇼츠는 공식 영상을 알리기 위해 만든 팬 제작 홍보 영상입니다.\n공식 카페에 공개된 홍보 이미지 한 장과 웅토끼 팬 창작 장면으로 구성했으며 공식 채널을 사칭하지 않습니다.\n\n공식 영상\n${data.video}\n\n공식 카페 공지\n${data.cafe}\n\n유튜브 검색: ${data.search}\n\n#임영웅 #Baila #IMHERO #영웅시대 #웅토끼`}
-function refreshText(){const script=narrationText();$('script-preview').textContent=script;document.querySelector('.silent-box a').href=data.video}
+function refreshText(){const script=narrationText();if($('script-preview'))$('script-preview').textContent=script;const officialLink=document.querySelector('.silent-box a');if(officialLink)officialLink.href=data.video}
 function field(id,key){return $(id)?.value.trim()||defaults[key]}
 function applyInputs(message='이 작품의 내용을 영상에 적용했습니다.'){data={title:field('news-title','title'),subtitle:field('news-subtitle','subtitle'),search:field('search-phrase','search'),video:field('video-url','video'),cafe:field('cafe-url','cafe')};refreshText();render(time);if($('input-status'))$('input-status').textContent=message}
 function reset(){for(const [id,key] of [['news-title','title'],['news-subtitle','subtitle'],['search-phrase','search'],['video-url','video'],['cafe-url','cafe']])if($(id))$(id).value=defaults[key];applyInputs('Baila 공식소식 작품으로 되돌렸습니다.')}
@@ -41,11 +41,11 @@ async function encode(){if(!window.VideoEncoder)throw Error('최신 Chrome 또�
 function safeName(v){return v.replace(/[\\/:*?"<>|!]+/g,'').replace(/\s+/g,'-').slice(0,48)||'웅토끼-공식소식'}
 function downloadBlob(blob,name,remember=false){const url=URL.createObjectURL(blob),a=remember?$('ready-download'):document.createElement('a');a.href=url;a.download=name;if(remember){if(downloadURL)URL.revokeObjectURL(downloadURL);downloadURL=url;a.hidden=false;a.textContent='완성 영상 다시 저장'}else{document.body.append(a);setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},5000)}a.click()}
 function lock(on){for(const id of ['play','export','narration','thumbnail','description','apply','reset','seek','news-title','news-subtitle','search-phrase','video-url','cafe-url'])if($(id))$(id).disabled=on;$('cancel').hidden=!on}
-$('cancel').onclick=()=>cancelled=true;
-$('export').onclick=async()=>{stop();applyInputs('현재 입력 내용을 영상에 적용했습니다.');cancelled=false;lock(true);try{const blob=await encode();downloadBlob(blob,`${safeName(data.title)}-웅토끼-25초-쇼츠.mp4`,true);say('무음 25초 MP4를 저장했습니다. YouTube 앱에서 공식 리믹스 음원을 붙여 주세요.')}catch(e){say('영상 저장 오류: '+(e?.message||e))}finally{lock(false);render(0)}};
-$('narration').onclick=()=>{applyInputs();downloadBlob(new Blob([`${data.title} · 25초 쇼츠 나레이션\n\n${narrationText()}\n\n화면 검색 문구\n${data.search}\n`],{type:'text/plain;charset=utf-8'}),`${safeName(data.title)}-나레이션.txt`)};
-$('description').onclick=()=>{applyInputs();downloadBlob(new Blob([descriptionText()],{type:'text/plain;charset=utf-8'}),`${safeName(data.title)}-업로드-설명.txt`)};
-$('thumbnail').onclick=()=>{applyInputs();const saved=time;render(4.8);const thumb=document.createElement('canvas');thumb.width=1080;thumb.height=1920;const g=thumb.getContext('2d');g.drawImage(canvas,0,0,1080,1920);g.fillStyle='#071e32';g.fillRect(0,0,1080,560);g.textAlign='center';g.textBaseline='middle';g.lineJoin='round';g.font='800 86px "Nanum Gothic",sans-serif';g.lineWidth=16;g.strokeStyle='#0a263c';g.strokeText(data.title,540,210);g.fillStyle='#ffe16c';g.fillText(data.title,540,210);g.font='800 50px "Nanum Gothic",sans-serif';g.fillStyle='#fff';g.fillText('웅토끼 공식소식',540,355);g.fillStyle='#79dfff';g.fillRect(370,430,340,8);thumb.toBlob(blob=>downloadBlob(blob,`${safeName(data.title)}-세로-썸네일.png`),'image/png');render(saved)};
+if($('cancel'))$('cancel').onclick=()=>cancelled=true;
+if($('export'))$('export').onclick=async()=>{stop();applyInputs('현재 입력 내용을 영상에 적용했습니다.');cancelled=false;lock(true);try{const blob=await encode();downloadBlob(blob,`${safeName(data.title)}-웅토끼-25초-쇼츠.mp4`,true);say('무음 25초 MP4를 저장했습니다. YouTube 앱에서 공식 리믹스 음원을 붙여 주세요.')}catch(e){say('영상 저장 오류: '+(e?.message||e))}finally{lock(false);render(0)}};
+if($('narration'))$('narration').onclick=()=>{applyInputs();downloadBlob(new Blob([`${data.title} · 25초 쇼츠 나레이션\n\n${narrationText()}\n\n화면 검색 문구\n${data.search}\n`],{type:'text/plain;charset=utf-8'}),`${safeName(data.title)}-나레이션.txt`)};
+if($('description'))$('description').onclick=()=>{applyInputs();downloadBlob(new Blob([descriptionText()],{type:'text/plain;charset=utf-8'}),`${safeName(data.title)}-업로드-설명.txt`)};
+if($('thumbnail'))$('thumbnail').onclick=()=>{applyInputs();const saved=time;render(4.8);const thumb=document.createElement('canvas');thumb.width=1080;thumb.height=1920;const g=thumb.getContext('2d');g.drawImage(canvas,0,0,1080,1920);g.fillStyle='#071e32';g.fillRect(0,0,1080,560);g.textAlign='center';g.textBaseline='middle';g.lineJoin='round';g.font='800 86px "Nanum Gothic",sans-serif';g.lineWidth=16;g.strokeStyle='#0a263c';g.strokeText(data.title,540,210);g.fillStyle='#ffe16c';g.fillText(data.title,540,210);g.font='800 50px "Nanum Gothic",sans-serif';g.fillStyle='#fff';g.fillText('웅토끼 공식소식',540,355);g.fillStyle='#79dfff';g.fillRect(370,430,340,8);thumb.toBlob(blob=>downloadBlob(blob,`${safeName(data.title)}-세로-썸네일.png`),'image/png');render(saved)};
 window.addEventListener('beforeunload',()=>{stop();if(downloadURL)URL.revokeObjectURL(downloadURL)});
 Promise.all([
  loadImage('assets/first-stadium/backgrounds/stadium-plaza.webp').then(im=>backgrounds[0]=im),
@@ -54,5 +54,5 @@ Promise.all([
  loadImage('assets/official-news/baila-official.png').then(im=>officialPhoto=im),
  loadImage('assets/woong-rabbit/greeting.png').then(im=>sprites.greeting=frames(im,3,2)),
  loadImage('assets/woong-rabbit/actions.png').then(im=>sprites.actions=frames(im,3,2)),document.fonts.ready
-]).then(()=>{ready=true;for(const id of ['play','export','narration','thumbnail','description'])$(id).disabled=false;refreshText();render(0);say('25초 웅토끼 공식소식 쇼츠가 준비되었습니다.')}).catch(e=>say('장면을 불러오지 못했습니다: '+e.message));
+]).then(()=>{ready=true;for(const id of ['play','export','narration','thumbnail','description'])if($(id))$(id).disabled=false;refreshText();render(0);say('25초 웅토끼 공식소식 쇼츠가 준비되었습니다.')}).catch(e=>say('장면을 불러오지 못했습니다: '+e.message));
 })();

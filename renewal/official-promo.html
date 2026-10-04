@@ -7,24 +7,24 @@
 <meta name="theme-color" content="#f2eee5"><link rel="icon" href="icons/favicon-32.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Nanum+Gothic:wght@400;700;800&display=swap">
 <link rel="stylesheet" href="official-promo-hub.css?v=20261004-01">
+<script src="official-promo-hub.js?v=20261004-01" defer></script>
 </head>
 <body>
 <a class="skip" href="#collection">작품 목록으로 바로가기</a>
-<header><a class="brand" href="woong-studio.html">웅토끼 작업실<span>OFFICIAL NEWS ARCHIVE</span></a><nav><a href="#collection">공식소식</a><a href="#request">새 소식 만드는 법</a></nav><a class="home-link" href="woong-studio.html">작업실 모음 ↗</a></header>
+<header><a class="brand" href="index.html">웅토끼 팬 스튜디오<span>OFFICIAL NEWS ARCHIVE</span></a><nav><a href="#collection">공식소식</a><a href="#request">새 소식 만드는 법</a></nav><a class="home-link" href="index.html">팬 스튜디오 홈 ↗</a></header>
 <main>
 <section class="hero"><div class="hero-copy"><p class="eyebrow">WOONG RABBIT · OFFICIAL NEWS</p><h1>공식 소식이 생길 때마다,<br><span>새 영상 한 편씩.</span></h1><p>문구만 바꾸는 반복 영상이 아닙니다. 새 소식의 내용과 분위기에 맞춰 장면, 웅토끼의 행동, 자막과 나레이션을 매번 새롭게 구성합니다.</p><a class="hero-button" href="#collection">완성 소식 보기 <b>↓</b></a></div><div class="hero-art"><div class="sun"></div><img src="assets/woong-rabbit/design-02.png" alt="공식 소식을 전하는 웅토끼"><p><b>새 소식!</b><br>제가 전해 드릴게요</p></div></section>
 
-<section class="archive-intro" id="collection"><div><p class="eyebrow">OFFICIAL NEWS COLLECTION</p><h2>공식소식 영상 보관함</h2></div><div class="archive-count"><strong>01</strong><span>완성 작품</span></div></section>
+<section class="archive-intro" id="collection"><div><p class="eyebrow">OFFICIAL NEWS COLLECTION</p><h2>공식소식 영상 보관함</h2></div><div class="archive-count"><strong id="archive-count">00</strong><span>완성 작품</span></div></section>
 
-<section class="collection" aria-label="완성된 공식소식 영상">
-<article class="news-card featured"><a class="cover" href="official-promo-baila.html"><img src="assets/official-news/baila-cover.webp" alt="Baila 공식 라이브 공개 웅토끼 쇼츠 표지"><span class="episode">EP. 01</span><span class="duration">25 SEC</span></a><div class="card-body"><div class="meta"><span>공식 영상 공개</span><time datetime="2026-10-01">2026. 10. 01</time></div><h3>임영웅 ‘Baila’<br>공식 라이브 공개</h3><p>스타디움의 설렘을 담아 웅토끼가 공식 라이브 소식을 전합니다. 마지막 건행 인사까지 25초로 구성했습니다.</p><div class="card-actions"><a class="primary" href="official-promo-baila.html">영상과 자료 받기 ↗</a><a href="https://youtu.be/-wGXnDzPovw" target="_blank" rel="noopener">공식 영상 보기 ↗</a></div></div></article>
-<div class="next-card"><span>02</span><p class="eyebrow">NEXT OFFICIAL NEWS</p><h3>다음 소식을 기다리고 있어요</h3><p>새로운 공식 공지나 영상이 나오면 정보를 보내 주세요. 두 번째 작품이 이 자리에 추가됩니다.</p></div>
+<section id="official-news-list" class="collection" aria-label="완성된 공식소식 영상" aria-live="polite">
+<p class="archive-loading">공식소식 작품을 불러오고 있습니다…</p>
 </section>
 
 <section class="request" id="request"><div class="request-title"><p class="eyebrow">HOW TO ADD A NEW STORY</p><h2>새 소식은 이렇게<br>추가합니다.</h2><p>이 페이지에서 직접 글자만 바꾸는 방식이 아닙니다. 저에게 정보를 보내 주시면 소식에 맞는 전용 영상을 만들고 여기에 한 편씩 쌓아 드립니다.</p></div><ol><li><b>01</b><div><strong>공식 소식을 보내 주세요</strong><span>공지 제목, 간단한 내용, 공식 카페나 YouTube 주소를 알려 주세요.</span></div></li><li><b>02</b><div><strong>새 장면을 따로 제작합니다</strong><span>소식의 성격에 맞춰 배경, 행동, 웹툰 자막과 나레이션을 새롭게 구성합니다.</span></div></li><li><b>03</b><div><strong>이 보관함에 추가합니다</strong><span>완성 영상, 나레이션, 썸네일과 설명문을 받을 수 있는 새 카드가 생깁니다.</span></div></li></ol></section>
 
 <section class="send-guide"><p class="eyebrow">WHAT TO SEND</p><h2>다음에는 이것만 보내 주세요.</h2><div class="send-list"><span>공식 소식 제목</span><span>무슨 내용인지</span><span>공식 주소</span><span>강조하고 싶은 부분</span></div><p class="example">예: “새 콘서트 일정이 공개됐어. 이 공지로 웅토끼 공식소식 2편을 만들어줘.”</p></section>
 </main>
-<footer><a href="woong-studio.html">← 웅토끼 작업실로 돌아가기</a><span>공식 소식마다 새롭게 만드는 팬 창작 영상 보관함</span></footer>
+<footer><a href="index.html">← 웅토끼 팬 스튜디오로 돌아가기</a><span>공식 소식마다 새롭게 만드는 팬 창작 영상 보관함</span></footer>
 </body>
 </html>

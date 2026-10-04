@@ -1,0 +1,6 @@
+{
+  "buildCommand": "node renewal/build-public-site.cjs",
+  "outputDirectory": ".public-site",
+  "cleanUrls": false,
+  "trailingSlash": false
+}
