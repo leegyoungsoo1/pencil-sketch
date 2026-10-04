@@ -12,18 +12,18 @@
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Allura&family=Black+Han+Sans&family=Nanum+Brush+Script&family=Nanum+Gothic:wght@400;700;800&family=Nanum+Pen+Script&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Allura&family=Black+Han+Sans&family=Jua&family=Nanum+Brush+Script&family=Nanum+Gothic:wght@400;700;800&family=Nanum+Pen+Script&display=swap" />
   <link rel="stylesheet" href="style-upgraded.css?v=20261004-01" />
   <link rel="stylesheet" href="mode-switch.css?v=20261004-01" />
   <link rel="stylesheet" href="studio.css?v=20261004-01" />
   <link rel="stylesheet" href="fan-site.css?v=20261004-02" />
-  <link rel="stylesheet" href="atelier.css?v=20261004-02">
+  <link rel="stylesheet" href="atelier.css?v=20261004-03">
 </head>
 <body>
   <header class="fan-header"><a class="fan-brand" href="index.html">웅토끼 팬 스튜디오<span>UNOFFICIAL FAN CREATIVE SPACE</span></a><nav aria-label="주요 메뉴"><a href="index.html#news">영웅 새소식</a><a href="index.html#theater">웅토끼 극장</a><a href="fan-maker.html">직접 만들기</a><a href="atelier.html" aria-current="page">연필 스케치</a></nav><a class="header-create" href="fan-maker.html">15초 영상 만들기 ↗</a></header>
   <a class="skip-link" href="#stage">미리보기로 건너뛰기</a>
 
-  <header class="atelier-heading"><div><p class="atelier-kicker">MEMORY ATELIER / 01</p><h1>당신의 마음을 그리는 작업실.</h1><p>사진을 고르고, 큰 화면으로 바라보고, 나만의 작품으로 간직하세요.</p></div><a href="#stage" class="atelier-jump">큰 미리보기로 ↓</a><figure class="atelier-cover"><img src="assets/site/process.webp" alt="연필과 종이가 놓인 따뜻한 작업 공간"><figcaption>내 사진으로 만드는 작은 예술<span>나의 일상 · 가족의 추억 · 함께한 순간</span></figcaption></figure></header>
+  <header class="atelier-heading"><div><p class="atelier-kicker">WOONG RABBIT · PENCIL ATELIER</p><h1>사진 한 장을,<br><span>따뜻한 연필 그림으로.</span></h1><p>좋아하는 얼굴과 소중한 순간을 골라 웅토끼 작업실에서 나만의 작품으로 간직해 보세요.</p></div><a href="#stage" class="atelier-jump">큰 미리보기로 ↓</a><figure class="atelier-cover"><img src="assets/site/process.webp" alt="연필과 종이가 놓인 따뜻한 작업 공간"><figcaption>웅토끼의 연필 작업실<span>사진 · 편지 · 추억을 한 장에</span></figcaption></figure></header>
 
 
   <main class="layout">
@@ -46,7 +46,7 @@
 
     <!-- 3. Preview -->
     <section id="stage" class="card step stage" aria-labelledby="stepPreview">
-      <div class="atelier-stage-heading"><div><p class="atelier-kicker">YOUR CANVAS</p><h2 id="stepPreview" class="step-title">작품을 가까이, 더 선명하게.</h2></div><div class="atelier-view-tools"><button id="shrinkCanvas" type="button">축소 −</button><button id="expandCanvas" type="button" aria-pressed="false">화면 폭으로 확대</button><button id="fullscreenCanvas" type="button">전체 화면 ↗</button></div></div><div class="atelier-canvas-mat">
+      <div class="atelier-stage-heading"><div><p class="atelier-kicker">WOONG RABBIT CANVAS</p><h2 id="stepPreview" class="step-title">그림이 완성되는 순간을 만나 보세요.</h2></div><div class="atelier-view-tools"><button id="shrinkCanvas" type="button">축소 −</button><button id="expandCanvas" type="button" aria-pressed="false">화면 폭으로 확대</button><button id="fullscreenCanvas" type="button">전체 화면 ↗</button></div></div><div class="atelier-canvas-mat">
       <div class="canvas-wrap">
         <canvas id="canvas" width="1080" height="1920" aria-label="연필 드로잉 미리보기"></canvas>
         <div id="busy" class="busy" hidden><span class="spinner" aria-hidden="true"></span><strong id="busyText">사진을 분석하고 있습니다</strong><small id="busyTime">0초</small></div>
