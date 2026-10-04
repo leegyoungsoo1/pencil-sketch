@@ -1,4 +1,4 @@
-name: Deploy public fan site
+name: Deploy GitHub admin studio
 
 on:
   push:
@@ -20,14 +20,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Build public-only site
-        run: node renewal/build-public-site.cjs
+      - name: Build admin studio for GitHub Pages
+        run: node renewal/build-admin-site.cjs
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload public site
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .public-site
+          path: .admin-site
 
   deploy:
     environment:

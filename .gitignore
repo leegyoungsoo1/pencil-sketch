@@ -1,3 +1,4 @@
 .test-output/
 .public-site/
+.admin-site/
 .wrangler/
