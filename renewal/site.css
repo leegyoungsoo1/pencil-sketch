@@ -5,3 +5,8 @@
 
 .hero-actions{flex-wrap:wrap}.button.story-button{background:#946044}.button.story-button:hover{background:#7b4e37}@media(max-width:600px){.hero-actions .story-button{min-width:180px}}
 .site-header nav{gap:clamp(12px,2vw,28px);margin-right:8px}@media(max-width:1000px){.site-header{flex-wrap:wrap}.site-header nav{order:3;flex:0 0 100%;justify-content:center;flex-wrap:wrap;margin:0;gap:14px 22px}}@media(max-width:600px){.site-header nav{display:flex;font-size:12px;justify-content:flex-start}html{scroll-padding-top:150px}}
+
+/* 메인 헤더는 두 작업실과 세 개의 안내 메뉴만 보여 줍니다. */
+.site-header .header-actions{display:flex;align-items:center;gap:9px}.site-header .header-actions .woong-link{background:#966044}.site-header .header-actions .woong-link:hover{background:#7c4d37}.site-header .header-actions .atelier-link{background:#314c3b}.site-header nav{margin-right:8px;gap:clamp(16px,2vw,32px)}
+@media(max-width:1000px){.site-header .header-actions{margin-left:auto}}
+@media(max-width:600px){html{scroll-padding-top:85px}.site-header{flex-wrap:nowrap}.site-header nav{display:none}.site-header .header-actions{gap:6px}.site-header .header-actions .button{padding:11px 10px;font-size:11px;gap:6px}.site-header .header-actions .button span{font-size:14px}.site-header .brand{flex:0 0 auto}}

@@ -14,7 +14,15 @@ module.exports=async({chromium,server,root})=>{
   }
   await page.locator('.faq summary').first().click();assert(await page.locator('.faq details').first().evaluate(e=>e.open));
   await page.locator('.faq summary').nth(1).click();await page.waitForFunction(()=>document.querySelectorAll('.faq details[open]').length===1);assert.equal(await page.locator('.faq details[open]').count(),1);
-  await page.locator('.site-header .button').click();await page.waitForURL('**/atelier.html');
+  assert.equal(await page.locator('.site-header nav a').count(),3);
+  assert.equal(await page.locator('.site-header .header-actions a').count(),2);
+  assert.equal(await page.locator('.hero-actions a').count(),3);
+  await page.locator('.site-header .woong-link').click();await page.waitForURL('**/woong-studio.html');
+  assert.equal(await page.locator('.story-card').count(),5);
+  assert.equal(await page.locator('.maker-grid a').count(),4);
+  const hubImages=await page.evaluate(async()=>{const ims=[...document.images];await Promise.all(ims.map(im=>im.decode()));return ims.every(im=>im.naturalWidth>0)});assert(hubImages);
+  for(const width of [1440,390]){await page.setViewportSize({width,height:950});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`hub overflow ${width}`);await page.screenshot({path:path.join(out,`woong-studio-${width}.png`),fullPage:true});}
+  await page.locator('.site-header .atelier-link').click();await page.waitForURL('**/atelier.html');
   assert.equal(await page.inputValue('#style'),'graphite');assert.equal(await page.inputValue('#framing'),'face');assert.equal(await page.locator('#programMode').count(),0);
   await page.setViewportSize({width:1440,height:1000});
   assert(await page.evaluate(()=>Math.abs(document.querySelector('#stage').getBoundingClientRect().width-document.querySelector('.layout').getBoundingClientRect().width)<2));
@@ -23,6 +31,6 @@ module.exports=async({chromium,server,root})=>{
   await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:path.join(out,'studio-mobile.png'),fullPage:true});
   await page.goto(`http://127.0.0.1:${server.address().port}/classic.html`);await page.waitForURL('**/atelier.html');assert.equal(await page.inputValue('#style'),'graphite');
-  assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: 5 generated images, all images decode, anchors, FAQ, four widths, studio and classic navigation');
+  assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: clean home, Woong Rabbit hub, images, links, responsive widths, studio and classic navigation');
  }finally{await browser.close();server.close();}
 };
