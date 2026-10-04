@@ -21,10 +21,10 @@
     }
   ],
   "works": [
-    {"episode":"05","tag":"따뜻한 나눔","title":"영웅시대가 차린 따뜻한 한 끼","summary":"팬들의 응원이 이웃을 위한 한 끼가 되는 이야기","image":"assets/warm-meal/backgrounds/kitchen.webp"},
-    {"episode":"04","tag":"한여름의 선물","title":"파란 손들이 움직였습니다","summary":"무더운 여름, 이웃을 향해 움직인 따뜻한 마음","image":"assets/summer-kindness/backgrounds/community-hall.webp"},
-    {"episode":"03","tag":"팬의 특별한 하루","title":"일흔 살 엄마의 첫 스타디움","summary":"처음 만난 파란빛과 다시 소녀가 된 하루","image":"assets/first-stadium/backgrounds/stadium-plaza.webp"},
-    {"episode":"02","tag":"꿈을 키운 응원","title":"팬들이 키운 꿈의 무대","summary":"한 사람의 꿈을 무대 위로 올린 응원의 힘","image":"assets/hero-contest/backgrounds/stage.webp"},
-    {"episode":"01","tag":"영웅시대 미담","title":"이게 바로 영웅시대입니다","summary":"팬으로 시작해 누군가의 영웅이 된 사람들","image":"assets/heroic-age/backgrounds/finale.webp"}
+    {"id":"warm-meal","episode":"05","tag":"따뜻한 나눔","title":"영웅시대가 차린 따뜻한 한 끼","summary":"팬들의 응원이 이웃을 위한 한 끼가 되는 이야기","image":"assets/warm-meal/backgrounds/kitchen.webp","video":"assets/public-works/warm-meal.mp4","duration":"0:30"},
+    {"id":"summer-kindness","episode":"04","tag":"한여름의 선물","title":"파란 손들이 움직였습니다","summary":"무더운 여름, 이웃을 향해 움직인 따뜻한 마음","image":"assets/summer-kindness/backgrounds/community-hall.webp","video":"assets/public-works/summer-kindness.mp4","duration":"0:30"},
+    {"id":"first-stadium","episode":"03","tag":"팬의 특별한 하루","title":"일흔 살 엄마의 첫 스타디움","summary":"처음 만난 파란빛과 다시 소녀가 된 하루","image":"assets/first-stadium/backgrounds/stadium-plaza.webp","video":"assets/public-works/first-stadium.mp4","duration":"0:30"},
+    {"id":"hero-contest","episode":"02","tag":"꿈을 키운 응원","title":"팬들이 키운 꿈의 무대","summary":"한 사람의 꿈을 무대 위로 올린 응원의 힘","image":"assets/hero-contest/backgrounds/stage.webp","video":"assets/public-works/hero-contest.mp4","duration":"0:30"},
+    {"id":"heroic-age","episode":"01","tag":"영웅시대 미담","title":"이게 바로 영웅시대입니다","summary":"팬으로 시작해 누군가의 영웅이 된 사람들","image":"assets/heroic-age/backgrounds/finale.webp","video":"assets/public-works/heroic-age.mp4","duration":"0:30"}
   ]
 }
