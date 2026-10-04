@@ -8,3 +8,4 @@ body{background:#f0f2eb}.atelier-heading{width:min(1400px,100% - 64px);margin:45
 @media(max-width:850px){.atelier-heading{padding:24px}.atelier-cover{width:160px;flex-basis:160px}.atelier-cover img{height:190px}.atelier-heading h1{font-size:28px}.action-bar .btn{font-size:14px;padding:14px 12px}}
 @media(max-width:540px){.atelier-heading{display:block;padding:22px}.atelier-cover{width:100%;margin-top:20px}.atelier-cover img{height:140px}.step-photo .step-title:after{font-size:9px;letter-spacing:1px}.action-bar{gap:6px;padding:10px}.action-bar .btn{font-size:12px;padding:12px 8px;flex:1}.quick-orientation{padding:14px}.processing-notice{bottom:80px}}
 .action-bar{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr)}
+.fan-header a[aria-current="page"]{color:#2f83a4}.atelier-footer{margin-bottom:76px;background:#fcfcf8}.skip-link{z-index:90}

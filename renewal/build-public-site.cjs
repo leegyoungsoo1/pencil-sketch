@@ -12,7 +12,7 @@ const publicFiles=[
   'news-baila.html','news-view.css',
   'official-promo.html','official-promo-hub.css','official-promo-hub.js','official-promo.js',
   'work-view.html','work-view.css','work-view.js',
-  'atelier.html','atelier.css','portrait.js','hand-motion.js','studio-graphite.js','atelier-app.js','atelier.js',
+  'atelier.html','atelier.css','style-upgraded.css','mode-switch.css','studio.css','portrait.js','hand-motion.js','studio-graphite.js','atelier-app.js','atelier.js',
   'manifest.webmanifest'
 ];
 const publicAssetFolders=['icons','assets/official-news','assets/public-works','assets/woong-rabbit','assets/first-stadium','assets/warm-meal','assets/heroic-age','assets/hero-contest','assets/summer-kindness','assets/site','assets/atelier','assets/backgrounds'];
@@ -31,5 +31,9 @@ fs.writeFileSync(path.join(outputRoot,'.nojekyll'),'');
 
 const publicHtml=publicFiles.filter(file=>file.endsWith('.html')).map(file=>fs.readFileSync(path.join(outputRenewal,file),'utf8')).join('\n');
 for(const forbidden of forbiddenPages){if(publicHtml.includes(forbidden))throw Error(`공개 페이지에 관리자 링크가 남아 있습니다: ${forbidden}`);if(fs.existsSync(path.join(outputRenewal,forbidden)))throw Error(`관리자 페이지가 공개 결과물에 포함됐습니다: ${forbidden}`)}
+const localReference=/\b(?:src|href)=["']([^"']+)["']/g;
+for(const relative of publicFiles.filter(file=>file.endsWith('.html'))){const htmlPath=path.join(outputRenewal,relative),html=fs.readFileSync(htmlPath,'utf8');for(const match of html.matchAll(localReference)){const value=match[1];if(!value||value.startsWith('#')||/^(?:https?:|data:|mailto:|javascript:)/i.test(value))continue;const clean=decodeURIComponent(value.split(/[?#]/)[0]);if(!clean)continue;const target=path.resolve(path.dirname(htmlPath),clean);if(!target.startsWith(outputRoot+path.sep)||!fs.existsSync(target))throw Error(`공개 HTML의 연결 파일이 없습니다: ${relative} -> ${clean}`)}}
+const cssReference=/url\(\s*["']?([^"')]+)["']?\s*\)/g;
+for(const relative of publicFiles.filter(file=>file.endsWith('.css'))){const cssPath=path.join(outputRenewal,relative),css=fs.readFileSync(cssPath,'utf8');for(const match of css.matchAll(cssReference)){const value=match[1];if(!value||/^(?:https?:|data:)/i.test(value))continue;const clean=decodeURIComponent(value.split(/[?#]/)[0]);const target=path.resolve(path.dirname(cssPath),clean);if(!target.startsWith(outputRoot+path.sep)||!fs.existsSync(target))throw Error(`공개 CSS의 연결 파일이 없습니다: ${relative} -> ${clean}`)}}
 console.log(`공개 사이트 빌드 완료: ${path.relative(repoRoot,outputRoot)}`);
 console.log(`공개 HTML ${publicFiles.filter(file=>file.endsWith('.html')).length}개 · 관리자 제작 HTML 0개`);
