@@ -54,6 +54,12 @@
 
 접속: 로컬 `/renewal/`, GitHub Pages `/pencil-sketch/renewal/`. 분석과 인코딩 라이브러리 일부는 인터넷에서 불러옵니다.
 
+## 웅토끼 바로가기 설치
+
+공개 페이지의 `바로가기 만들기` 버튼은 지원되는 Chrome·Edge에서 PWA 설치창을 열고, 아이폰·아이패드와 설치창을 제공하지 않는 브라우저에서는 홈 화면 추가 방법을 안내합니다. 설치 후에는 웅토끼 아이콘으로 팬 스튜디오를 바로 열 수 있습니다. 서비스 워커는 온라인 접속을 우선하며, 네트워크가 끊겼을 때만 캐시된 홈 화면을 표시합니다.
+
+대표 아이콘 원본은 `icons/woong-rabbit-icon-master.png`입니다. 아이콘 크기를 다시 만들 때는 `python renewal/generate-site-icons.py`를 실행합니다. 공개 빌드에는 실제로 사용하는 32·180·192·512px 아이콘과 마스커블 아이콘만 포함합니다.
+
 추가 UI 검증: `node renewal/test-browser.cjs --public-controls` — 공통 서명·글꼴, 편지 분리, 10단위 조절, 파노라마 배치, 초기값 복원을 검사합니다. ONNX의 `env.wasm.proxy`를 켜 무거운 모델 추론을 Web Worker로 분리했습니다([공식 안내](https://onnxruntime.ai/docs/tutorials/web/env-flags-and-session-options.html)).
 
 ## 아틀리에 연필화
