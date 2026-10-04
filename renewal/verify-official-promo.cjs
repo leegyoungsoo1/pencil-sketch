@@ -3,9 +3,43 @@ const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),
 const root=path.resolve(__dirname,'..'),out=path.join(root,'.test-output','official-promo');fs.mkdirSync(out,{recursive:true});
 const types={'.js':'application/javascript','.html':'text/html','.css':'text/css','.png':'image/png','.webp':'image/webp','.mp4':'video/mp4','.txt':'text/plain'};
 const server=http.createServer((req,res)=>{const rel=decodeURIComponent(req.url.split('?')[0]==='/'?'/renewal/official-promo.html':req.url.split('?')[0]),file=path.resolve(root,'.'+rel);if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return}fs.readFile(file,(e,b)=>{if(e){res.writeHead(404).end();return}res.setHeader('Content-Type',types[path.extname(file)]||'application/octet-stream');res.end(b)})});
-(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true,channel:'msedge'});try{const page=await browser.newPage({viewport:{width:1360,height:950},acceptDownloads:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});const base=`http://127.0.0.1:${server.address().port}`;await page.goto(base+'/renewal/official-promo.html');await page.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('준비되었습니다'),{},{timeout:45000});assert.equal(await page.locator('#stage').getAttribute('width'),'720');assert.equal(await page.locator('#stage').getAttribute('height'),'1280');assert.equal(await page.inputValue('#video-url'),'https://youtu.be/-wGXnDzPovw');assert.match(await page.locator('#script-preview').innerText(),/공식 영상/);
-for(const [name,value,segment] of [['hook','100',1],['news','450',2],['stage','950',3],['search','1500',4],['geonhaeng','2250',5]]){await page.locator('#seek').fill(value);await page.locator('#seek').dispatchEvent('input');assert.equal(Number(await page.locator('#stage').getAttribute('data-segment')),segment);await page.locator('#stage').screenshot({path:path.join(out,`${name}.png`)})}
-await page.fill('#news-title','새 공식 영상 공개!');await page.click('#apply');assert.equal(await page.locator('#stage').getAttribute('data-title'),'새 공식 영상 공개!');await page.fill('#news-title','Baila 공식 라이브 공개!');await page.click('#apply');
-for(const [button,file,pattern,minBytes] of [['#narration','narration.txt',/건행/,100],['#description','description.txt',/-wGXnDzPovw/,100],['#thumbnail','thumbnail.png',null,1000]]){const event=page.waitForEvent('download');await page.click(button);const item=await event,target=path.join(out,file);await item.saveAs(target);assert(fs.statSync(target).size>minBytes);if(pattern)assert.match(fs.readFileSync(target,'utf8'),pattern)}
-await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(out,'mobile.png'),fullPage:true});await page.setViewportSize({width:900,height:1000});
-const event=page.waitForEvent('download',{timeout:300000});await page.click('#export');const item=await event,target=path.join(out,'promo.mp4');await item.saveAs(target);await page.waitForFunction(()=>!document.querySelector('#export').disabled,{},{timeout:300000});const mp4=fs.readFileSync(target);assert(mp4.length>100000);assert(!mp4.includes(Buffer.from('soun')));const meta=await page.evaluate(async src=>{const v=document.createElement('video');v.src=src;await new Promise((r,j)=>{v.onloadedmetadata=r;v.onerror=j});return {duration:v.duration,width:v.videoWidth,height:v.videoHeight}},base+'/.test-output/official-promo/promo.mp4');assert.equal(meta.width,720);assert.equal(meta.height,1280);assert(Math.abs(meta.duration-25)<.25);assert.deepEqual(errors,[]);console.log(JSON.stringify({meta,bytes:mp4.length,errors},null,2))}finally{await browser.close();server.close()}})().catch(e=>{console.error(e);server.close();process.exitCode=1});
+
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const browser=await chromium.launch({headless:true,channel:'msedge'});
+ try{
+  const page=await browser.newPage({viewport:{width:1360,height:950},acceptDownloads:true}),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+  const base=`http://127.0.0.1:${server.address().port}`;
+
+  await page.goto(base+'/renewal/official-promo.html');await page.evaluate(()=>document.fonts.ready);
+  assert.equal(await page.locator('.news-card').count(),1);assert.equal(await page.locator('.next-card').count(),1);
+  assert.equal(await page.locator('input').count(),0);assert.match(await page.locator('.news-card h3').innerText(),/Baila/);
+  assert(await page.evaluate(async()=>{const ims=[...document.images];await Promise.all(ims.map(im=>im.decode()));return ims.every(im=>im.naturalWidth>0)}));
+  await page.screenshot({path:path.join(out,'archive-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:path.join(out,'archive-mobile.png'),fullPage:true});
+
+  await page.setViewportSize({width:1360,height:950});await page.goto(base+'/renewal/official-promo-baila.html');
+  await page.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('준비되었습니다'),{},{timeout:45000});
+  assert.equal(await page.locator('#stage').getAttribute('width'),'720');assert.equal(await page.locator('#stage').getAttribute('height'),'1280');
+  assert.equal(await page.locator('#news-title').count(),0);assert.match(await page.locator('#script-preview').innerText(),/공식 영상/);
+  for(const [name,value,segment] of [['hook','100',1],['news','450',2],['stage','950',3],['search','1500',4],['geonhaeng','2250',5]]){
+   await page.locator('#seek').fill(value);await page.locator('#seek').dispatchEvent('input');
+   assert.equal(Number(await page.locator('#stage').getAttribute('data-segment')),segment);
+   await page.locator('#stage').screenshot({path:path.join(out,`${name}.png`)});
+  }
+  for(const [button,file,pattern,minBytes] of [['#narration','narration.txt',/건행/,100],['#description','description.txt',/-wGXnDzPovw/,100],['#thumbnail','thumbnail.png',null,1000]]){
+   const event=page.waitForEvent('download');await page.click(button);const item=await event,target=path.join(out,file);await item.saveAs(target);
+   assert(fs.statSync(target).size>minBytes);if(pattern)assert.match(fs.readFileSync(target,'utf8'),pattern);
+  }
+  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:path.join(out,'detail-mobile.png'),fullPage:true});await page.setViewportSize({width:900,height:1000});
+  const event=page.waitForEvent('download',{timeout:300000});await page.click('#export');const item=await event,target=path.join(out,'promo.mp4');await item.saveAs(target);
+  await page.waitForFunction(()=>!document.querySelector('#export').disabled,{},{timeout:300000});const mp4=fs.readFileSync(target);
+  assert(mp4.length>100000);assert(!mp4.includes(Buffer.from('soun')));
+  const meta=await page.evaluate(async src=>{const v=document.createElement('video');v.src=src;await new Promise((r,j)=>{v.onloadedmetadata=r;v.onerror=j});return {duration:v.duration,width:v.videoWidth,height:v.videoHeight}},base+'/.test-output/official-promo/promo.mp4');
+  assert.equal(meta.width,720);assert.equal(meta.height,1280);assert(Math.abs(meta.duration-25)<.25);assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({archiveCards:1,meta,bytes:mp4.length,errors},null,2));
+ }finally{await browser.close();server.close()}
+})().catch(e=>{console.error(e);server.close();process.exitCode=1});
