@@ -7,11 +7,14 @@
 | 동작 묶음 | 파일 | 용도 |
 | --- | --- | --- |
 | 노래·춤 24프레임 | `assets/woong-rabbit/sing-dance-v1.png`, `sing-dance-quarter-a-v1.png`, `sing-dance-transitions-v1.png`, `sing-dance-quarter-b-v1.png` | 라이브 클립, 신곡, 공연 소식 |
+| 잔잔한 노래 24프레임 | `assets/woong-rabbit/sing-gentle-keys-v1.png`, `sing-gentle-third-a-v1.png`, `sing-gentle-third-b-v1.png` | 발라드, 소식 안내, 차분한 노래 장면 |
 | 건행 인사 6프레임 | `assets/woong-rabbit/greeting.png` | 영상 마지막 고정 인사 |
 | 걷기 | `assets/woong-rabbit/walk.png`, `walk-cardinal.png`, `walk-diagonal.png` | 이동, 입장, 퇴장 |
 | 생활·응원 동작 | `assets/woong-rabbit/actions.png` | 앉기, 베개 들기, 살펴보기, 환호 |
 
 `woong-motion-library.js`는 6개의 키 자세 사이에 세 단계의 중간 자세를 연결해 총 24프레임으로 재생하고, 부드러운 위치 이동·상하 호흡·몸 기울기·크기 변화를 더한다.
+
+`sing-gentle`은 8개의 작은 키 자세 사이에 중간 자세 두 장씩을 연결한다. 발과 마이크 위치를 유지하고 전체 영상 시간을 기준으로 이어서 재생하므로 장면 전환 때 자세가 갑자기 바뀌지 않는다.
 
 모든 영상의 마지막 건행 인사는 손을 올린 5번 프레임에 도달한 뒤 영상이 끝날 때까지 자세와 위치를 고정한다.
 
