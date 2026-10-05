@@ -10,7 +10,7 @@ const cloudflareConfigPath=path.join(repoRoot,'wrangler.jsonc');
 const publicFiles=[
   'index.html','fan-site.css','fan-site.js','install-app.css','install-app.js','service-worker.js','public-content.json',
   'fan-maker.html','fan-maker.css','fan-maker.js',
-  'news-baila.html','news-view.css',
+  'news-baila.html','news-moise.html','news-view.css',
   'official-promo.html','official-promo-hub.css','official-promo-hub.js','official-promo.js',
   'work-view.html','work-view.css','work-view.js',
   'atelier.html','atelier.css','style-upgraded.css','mode-switch.css','studio.css','portrait.js','hand-motion.js','studio-graphite.js','atelier-app.js','atelier.js',
@@ -18,7 +18,7 @@ const publicFiles=[
   'icons/woong-rabbit-rounded-32.png','icons/woong-rabbit-rounded-180.png','icons/woong-rabbit-rounded-192.png','icons/woong-rabbit-rounded-512.png','icons/woong-rabbit-maskable-v2-512.png'
 ];
 const publicAssetFolders=['assets/official-news','assets/public-works','assets/woong-rabbit','assets/first-stadium','assets/warm-meal','assets/heroic-age','assets/hero-contest','assets/summer-kindness','assets/site','assets/atelier','assets/backgrounds'];
-const forbiddenPages=['official-promo-baila.html','woong-studio.html','story.html','woong-rabbit.html','woong-rabbit-series.html','sprite-stage.html','woong-rabbit-3d.html','warm-meal.html','summer-kindness.html','first-stadium.html','heroic-age.html','hero-contest.html'];
+const forbiddenPages=['official-promo-baila.html','official-promo-moise.html','woong-studio.html','story.html','woong-rabbit.html','woong-rabbit-series.html','sprite-stage.html','woong-rabbit-3d.html','warm-meal.html','summer-kindness.html','first-stadium.html','heroic-age.html','hero-contest.html'];
 const maxPublicFileBytes=25*1024*1024;
 function copyTree(source,destination){const stat=fs.statSync(source);if(stat.isDirectory()){fs.mkdirSync(destination,{recursive:true});for(const entry of fs.readdirSync(source))copyTree(path.join(source,entry),path.join(destination,entry))}else{fs.mkdirSync(path.dirname(destination),{recursive:true});fs.copyFileSync(source,destination)}}
 function allFiles(folder){return fs.readdirSync(folder,{withFileTypes:true}).flatMap(entry=>{const full=path.join(folder,entry.name);return entry.isDirectory()?allFiles(full):[full]})}

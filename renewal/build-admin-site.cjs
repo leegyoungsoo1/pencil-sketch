@@ -34,7 +34,7 @@ fs.writeFileSync(path.join(outputRoot, '404.html'), redirect);
 fs.writeFileSync(path.join(outputRoot, '.nojekyll'), '');
 fs.writeFileSync(path.join(outputRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
 
-for (const required of ['woong-studio.html', 'official-promo-baila.html', 'official-promo.js', 'official-promo.css']) {
+for (const required of ['woong-studio.html', 'official-promo-baila.html', 'official-promo-moise.html', 'official-promo.js', 'official-promo.css']) {
   if (!fs.existsSync(path.join(outputRenewal, required))) {
     throw Error(`GitHub 관리자 배포 파일이 없습니다: ${required}`);
   }

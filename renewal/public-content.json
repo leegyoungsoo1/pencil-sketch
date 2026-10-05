@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-04",
+  "updatedAt": "2026-10-05",
   "news": [
     {
       "id": "baila-live",
@@ -18,6 +18,24 @@
       "href": "news-baila.html",
       "officialUrl": "https://youtu.be/-wGXnDzPovw",
       "duration": "25 SEC"
+    },
+    {
+      "id": "moise-live",
+      "episode": "02",
+      "date": "2026. 09. 22",
+      "category": "공식 영상 공개",
+      "title": "임영웅 ‘모이세’ 라이브 클립 공개",
+      "summary": "고양 스타디움을 흥으로 가득 채운 ‘모이세’ 무대를 웅토끼 공식소식으로 만나보세요.",
+      "image": "assets/official-news/moise-live.jpg",
+      "heroImage": "assets/official-news/moise-live.jpg",
+      "characterImage": "assets/woong-rabbit/design-02.png",
+      "characterAlt": "모이세 라이브 클립 소식을 전하는 웅토끼",
+      "heroBubbleTitle": "흥겨운 새 소식!",
+      "heroBubbleText": "모이세 라이브 클립 공개",
+      "cover": "assets/official-news/moise-live.jpg",
+      "href": "news-moise.html",
+      "officialUrl": "https://youtu.be/hLc9R9Q-hFo",
+      "duration": "22 SEC"
     }
   ],
   "works": [
