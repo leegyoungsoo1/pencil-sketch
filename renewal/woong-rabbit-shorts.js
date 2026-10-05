@@ -25,12 +25,12 @@ function render(t){
  ctx.clearRect(0,0,W,H);cover(backgrounds[seg.bg],seg.focal,1+.055*ease(p));
  let grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,'rgba(6,25,43,.82)');grad.addColorStop(.42,'rgba(7,31,52,.18)');grad.addColorStop(.72,'rgba(6,25,43,.08)');grad.addColorStop(1,'rgba(5,20,36,.86)');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
  if(index===0||index===4){sprite(fans[index===4?1:0],115,1135,330,.94);sprite(fans[index===4?3:2],610,1145,305,.92,true);}
- const seq=seg.pose==='greeting'?[0,1,2,3,4,5]:[3,4,2,1,4,5],frame=seq[Math.floor(local*2)%seq.length],bob=Math.sin(local*4.2)*8;
- sprite(sprites[seg.pose][frame],W/2+Math.sin(local*.8)*18,1145+bob,index===4?690:660,1,index===3);
+ const closing=index===4&&local>3.4,seq=seg.pose==='greeting'?[0,1,2,3,4]:[3,4,2,1,4,5],frame=closing?4:seq[Math.floor(local*2)%seq.length],bob=closing?0:Math.sin(local*4.2)*8;
+ sprite(sprites[seg.pose][frame],W/2+(closing?0:Math.sin(local*.8)*18),1145+bob,index===4?690:660,1,index===3);
  for(let i=0;i<12;i++){const a=(i*97+time*42)%360*Math.PI/180,r=120+(i%5)*62,x=W/2+Math.cos(a)*r,y=560+Math.sin(a*1.3)*300;ctx.globalAlpha=.25+.35*(.5+.5*Math.sin(time*4+i));ctx.fillStyle=i%2?seg.color:'#fff';ctx.beginPath();ctx.arc(x,y,2+(i%3)*1.5,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
  pill(56,62,608,62,'rgba(255,255,255,.94)');ctx.fillStyle='#285873';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='800 25px "Nanum Gothic", sans-serif';ctx.fillText(seg.tag,W/2,93);
  ctx.lineJoin='round';ctx.textAlign='center';let size=fit(seg.line1,56,620);ctx.font=`800 ${size}px "Nanum Gothic", sans-serif`;ctx.lineWidth=11;ctx.strokeStyle='rgba(7,29,49,.92)';ctx.strokeText(seg.line1,W/2,204);ctx.fillStyle='#fff';ctx.fillText(seg.line1,W/2,204);
- const closing=index===4&&local>3.4;const second=closing?'오늘도 건행!':seg.line2;size=fit(second,73,640);ctx.font=`800 ${size}px "Nanum Gothic", sans-serif`;ctx.lineWidth=13;ctx.strokeText(second,W/2,292);ctx.fillStyle=closing?'#ffd45d':seg.color;ctx.fillText(second,W/2,292);
+ const second=closing?'오늘도 건행!':seg.line2;size=fit(second,73,640);ctx.font=`800 ${size}px "Nanum Gothic", sans-serif`;ctx.lineWidth=13;ctx.strokeText(second,W/2,292);ctx.fillStyle=closing?'#ffd45d':seg.color;ctx.fillText(second,W/2,292);
  pill(58,1190,604,50,'rgba(8,35,58,.78)');ctx.fillStyle='#fff';ctx.font='700 21px "Nanum Gothic", sans-serif';ctx.fillText(index===4?'팬의 하루까지 생각한 준비':'확인된 운영 사례를 웅토끼 이야기로 재구성',W/2,1215);
  ctx.fillStyle='#8bdcff';ctx.fillRect(0,0,W*time/DURATION,9);ctx.fillStyle='rgba(255,255,255,.22)';ctx.fillRect(W*time/DURATION,0,W,9);
  const fade=Math.max(0,1-local/.32);if(fade){ctx.fillStyle=`rgba(255,255,255,${fade*.3})`;ctx.fillRect(0,0,W,H);}

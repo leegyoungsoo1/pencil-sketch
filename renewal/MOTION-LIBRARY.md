@@ -6,12 +6,14 @@
 
 | 동작 묶음 | 파일 | 용도 |
 | --- | --- | --- |
-| 노래·춤 12프레임 | `assets/woong-rabbit/sing-dance-v1.png`, `sing-dance-transitions-v1.png` | 라이브 클립, 신곡, 공연 소식 |
+| 노래·춤 24프레임 | `assets/woong-rabbit/sing-dance-v1.png`, `sing-dance-quarter-a-v1.png`, `sing-dance-transitions-v1.png`, `sing-dance-quarter-b-v1.png` | 라이브 클립, 신곡, 공연 소식 |
 | 건행 인사 6프레임 | `assets/woong-rabbit/greeting.png` | 영상 마지막 고정 인사 |
 | 걷기 | `assets/woong-rabbit/walk.png`, `walk-cardinal.png`, `walk-diagonal.png` | 이동, 입장, 퇴장 |
 | 생활·응원 동작 | `assets/woong-rabbit/actions.png` | 앉기, 베개 들기, 살펴보기, 환호 |
 
-`woong-motion-library.js`는 키 자세와 중간 자세를 번갈아 연결하고, 프레임 사이에 부드러운 위치 이동·상하 호흡·몸 기울기·크기 변화를 더한다.
+`woong-motion-library.js`는 6개의 키 자세 사이에 세 단계의 중간 자세를 연결해 총 24프레임으로 재생하고, 부드러운 위치 이동·상하 호흡·몸 기울기·크기 변화를 더한다.
+
+모든 영상의 마지막 건행 인사는 손을 올린 5번 프레임에 도달한 뒤 영상이 끝날 때까지 자세와 위치를 고정한다.
 
 ## 다음 이야기에서 순서대로 확장
 
@@ -25,4 +27,4 @@
 8. 물건 들기·밀기·나르기
 9. 요리·선물 포장·청소
 
-각 묶음은 6개의 키 자세와 6개의 중간 자세, 총 12프레임을 기본으로 만든다. 영상에서는 같은 묶음도 속도, 방향, 이동 거리, 크기와 카메라 구도를 바꿔 반복감을 줄인다.
+각 묶음은 6개의 키 자세와 18개의 중간 자세, 총 24프레임을 기본으로 만든다. 영상에서는 같은 묶음도 속도, 방향, 이동 거리, 크기와 카메라 구도를 바꿔 반복감을 줄인다.
