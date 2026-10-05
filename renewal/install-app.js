@@ -18,6 +18,25 @@ function makeDialog(){
 
 function openGuide(dialog){if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');}
 
+function cleanShareUrl(){const url=new URL(location.href);url.hash='';url.search='';return url.href;}
+
+async function copyShareUrl(button){
+ const url=cleanShareUrl();
+ try{await navigator.clipboard.writeText(url)}catch{const area=document.createElement('textarea');area.value=url;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();document.execCommand('copy');area.remove()}
+ const label=button.querySelector('.share-label'),original=label.textContent;label.textContent='주소 복사 완료';button.setAttribute('aria-label','공유 주소 복사 완료');button.classList.add('is-copied');setTimeout(()=>{label.textContent=original;button.setAttribute('aria-label','현재 페이지 공유하기');button.classList.remove('is-copied')},1800);
+}
+
+async function shareSite(button){
+ const description=document.querySelector('meta[name="description"]')?.content||'임영웅을 함께 보고, 만들고, 응원하는 웅토끼 팬 스튜디오입니다.';
+ const payload={title:document.title,text:description,url:cleanShareUrl()};
+ if(navigator.share){try{await navigator.share(payload);return}catch(error){if(error?.name==='AbortError')return}}
+ await copyShareUrl(button);
+}
+
+function makeShareButton(){
+ const button=document.createElement('button');button.type='button';button.className='share-site-button';button.setAttribute('aria-label','현재 페이지 공유하기');button.innerHTML='<span class="share-mark" aria-hidden="true">↗</span><span class="share-label">공유하기</span>';button.addEventListener('click',()=>shareSite(button));document.body.append(button);
+}
+
 async function install(button,dialog){
  if(!installPrompt){openGuide(dialog);return;}
  button.disabled=true;
@@ -26,6 +45,7 @@ async function install(button,dialog){
 
 function start(){
  if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('./service-worker.js',{scope:'./'}).catch(()=>{});
+ makeShareButton();
  if(isStandalone())return;
  const dialog=makeDialog(),button=document.createElement('button');button.type='button';button.className='install-shortcut-button';button.setAttribute('aria-label','웅토끼 팬 스튜디오 바로가기 만들기');button.innerHTML='<img src="icons/woong-rabbit-rounded-32.png" alt=""><span>바로가기 만들기</span>';button.addEventListener('click',()=>install(button,dialog));document.body.append(button);
  window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;button.classList.add('is-ready')});
