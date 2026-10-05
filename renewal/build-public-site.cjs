@@ -11,7 +11,7 @@ const publicFiles=[
   'index.html','fan-site.css','fan-site.js','install-app.css','install-app.js','service-worker.js','public-content.json',
   'fan-maker.html','fan-maker.css','fan-maker.js',
   'news-baila.html','news-moise.html','news-view.css',
-  'official-promo.html','official-promo-hub.css','official-promo-hub.js','official-promo.js',
+  'official-promo.html','official-promo-hub.css','official-promo-hub.js','official-promo.js','woong-motion-library.js',
   'work-view.html','work-view.css','work-view.js',
   'atelier.html','atelier.css','style-upgraded.css','mode-switch.css','studio.css','portrait.js','hand-motion.js','studio-graphite.js','atelier-app.js','atelier.js',
   'manifest.webmanifest',
